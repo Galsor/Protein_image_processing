@@ -3,40 +3,27 @@ from skimage import io, color, measure
 import matplotlib.pyplot as plt
 import numpy as np
 from Multi_slice_viewer import display_file, multi_slice_viewer, ax_config, process_key
-from skimage.external.tifffile import imshow as tiffshow
-import tifffile
-from skimage.measure import regionprops
+import os
+import sys
 
 # ________________________________________________
 # Imports for label region
 import matplotlib.patches as mpatches
 
-from skimage import data
 from skimage.filters import threshold_otsu, threshold_niblack, threshold_sauvola
-from skimage.segmentation import clear_border
-from skimage.measure import label, regionprops
+from skimage.measure import regionprops
 from skimage.morphology import closing, square
 from skimage.color import label2rgb
 import seaborn as sns
-# ________________________________________________
-# import for hough circle & elliptic detection
-from skimage.transform import hough_circle, hough_circle_peaks
-from skimage.feature import canny
-from skimage.draw import circle_perimeter
-from skimage.util import img_as_ubyte
-from skimage.transform import hough_ellipse
-from skimage.draw import ellipse_perimeter
+
 # ________________________________________________
 # Imports for local maximas
 from skimage.measure import label
-from skimage import data
 from skimage import color
 from skimage.morphology import extrema
-from skimage import exposure
 # ________________________________________________
 
 # Import for Fundamental matrix estimation¶
-from skimage.color import rgb2gray
 from skimage.feature import match_descriptors, ORB, plot_matches
 from skimage.measure import ransac
 from skimage.transform import FundamentalMatrixTransform
@@ -44,17 +31,24 @@ from skimage.transform import FundamentalMatrixTransform
 # Import for K-means clustering
 from sklearn.cluster import KMeans
 
-FILE_NAME = "C10DsRedlessxYw_emb11_Center_Out.tif"
-DATA_PATH = "C:/Users/Antoine/PycharmProjects/tiff_image_processing/venv/Data"
-# format of embryios data : {id : (TS, single mol)}
-EMBRYOS = {1: (77, 24221), 7: (82, 23002), 8: (71, 15262), 10: (92, 23074)}
-COLORS = {1: "#FF0000", 2: "#FF00FF", 3: "#0000FF"}
-
 """
 OBJ : Compter le nombre de TS et single mol par noyau
 Règle : Max 2 TS par noyau
 
 """
+
+FILE_NAME = "C10DsRedlessxYw_emb11_Center_Out.tif"
+DATA_PATH = "C:\\Users\\Antoine\\PycharmProjects\\Protein_image_processing\\data"
+
+PATH_TO_CURRENT_DIR = os.path.abspath(os.path.dirname(__file__))
+PATH_TO_ROOT_DIR = os.path.normpath(os.path.join(PATH_TO_CURRENT_DIR, '..'))
+sys.path.append(PATH_TO_ROOT_DIR)
+
+DATA_PATH = os.path.join(PATH_TO_ROOT_DIR, 'data')
+
+# format of embryios data : {id : (TS, single mol)}
+EMBRYOS = {1: (77, 24221), 7: (82, 23002), 8: (71, 15262), 10: (92, 23074)}
+COLORS = {1: "#FF0000", 2: "#FF00FF", 3: "#0000FF"}
 
 
 def extract_channels(im):
@@ -163,7 +157,7 @@ def add_img(image, axs, cmap='gnuplot2', col=0, row=None, title="Undefined"):
         elif len(shape) == 1:
             type = 'row'
         else:
-            raise " Some issues occured during type definition"
+            raise TypeError("Some issues occured during type definition")
     except:
         try:
             shape = len(axs)
@@ -173,7 +167,7 @@ def add_img(image, axs, cmap='gnuplot2', col=0, row=None, title="Undefined"):
                 axs.set_title(title)
                 type = 'single'
             except:
-                raise "Fail in ploting image : Axis is not properly setted"
+                raise TypeError("Fail in ploting image : Axis is not properly setted")
 
     if type == 'matrix':
         axs[row][col].imshow(image, cmap=cmap)
@@ -204,81 +198,6 @@ def simple_filter(image):
     from skimage.measure import regionprops
     props = regionprops(image)
     print(props)
-
-
-# Unrelevevant due to uncircular spots of light
-def hough_circle_detection(image):
-    fig, axs = plt.subplots(ncols=3, nrows=2, figsize=(12, 8))
-    row, col = add_img(image, axs, col=0, row=0, title="Initiale")
-
-    # Filter noise
-    np.place(image, image < 100, 0)
-    row, col = add_img(image, axs, col=col, row=row, title="Filtered")
-    # plot_img(image, "Filtered")
-
-    # image = color.rgb2gray(im)
-    # plot_img(image, "Gray")
-
-    edges = canny(image, low_threshold=0.1, high_threshold=0.2)
-    # plot_img(edges, "edges")
-    row, col = add_img(image, axs, col=col, row=row, title="edges")
-
-    # Detect radii
-    hough_radii = np.arange(2, 15)
-    hough_res = hough_circle(edges, hough_radii)
-    row, col = add_img(hough_res[0], axs, col=col, row=row, title="Hough Resolution")
-    # Select the most prominent 3 circles
-    accums, cx, cy, radii = hough_circle_peaks(hough_res, hough_radii,
-                                               total_num_peaks=3)
-
-    image = color.gray2rgb(image)
-    # plot_img(image, "Ungrayed")
-    # Draw them
-
-    for center_y, center_x, radius in zip(cy, cx, radii):
-        circy, circx = circle_perimeter(center_y, center_x, radius)
-        image[circy, circx] = [220, 20, 20]
-
-    # ax.imshow(image)
-    row, col = add_img(image, axs, col=col, row=row, title="Final")
-
-    plt.show()
-
-
-# inifite Processing
-def hough_elliptic_detection(image):
-    fig, axs = plt.subplots(ncols=4, nrows=1, figsize=(12, 8))
-    row, col = add_img(image, axs, col=0, row=0, title="Initiale")
-
-    # Filter noise
-    np.place(image, image < 100, 0)
-    row, col = add_img(image, axs, col=col, row=row, title="Filtered")
-    # plot_img(image, "Filtered")
-
-    # image = color.rgb2gray(im)
-    # plot_img(image, "Gray")
-
-    edges = canny(image, low_threshold=0.1, high_threshold=0.2)
-    # plot_img(edges, "edges")
-    row, col = add_img(image, axs, col=col, row=row, title="edges")
-
-    # Detect ellipsis
-    hough_res = hough_ellipse(edges)
-    hough_res.sort(order='accumulator')
-
-    best = list(result[-1])
-    yc, xc, a, b = [int(round(x)) for x in best[1:5]]
-    orientation = best[5]
-
-    # Draw the ellipse on the original image
-    cy, cx = ellipse_perimeter(yc, xc, a, b, orientation)
-    image_rgb[cy, cx] = (0, 0, 255)
-    # Draw the edge (white) and the resulting ellipse (red)
-    edges = color.gray2rgb(img_as_ubyte(edges))
-    edges[cy, cx] = (250, 0, 0)
-
-    # ax.imshow(image)
-    row, col = add_img(image, axs, col=col, row=row, title="Final")
 
 
 def local_maximas(img, h=None):
@@ -520,8 +439,7 @@ def region_properties(label_image, image=None, min_area=1, properties=None, sepa
 
 def demo_regions(image, label_image):
     fig, axs = plt.subplots(ncols=2, figsize=(10, 6))
-    axs[0].imshow(image_label_overlay)
-    # axs[0].imshow(image, cmap='gnuplot2')
+    axs[0].imshow(image, cmap='gnuplot2')
 
     # Compute regions properties
     regions, props = region_properties(label_image, image, min_area=4,
@@ -646,7 +564,7 @@ def fundamental_matrix_estimation(im1, im2):
     descriptors_1 = descriptor_extractor.descriptors
 
     # process img 2
-    descriptor_extractor.detect_and_extract(img_2)
+    descriptor_extractor.detect_and_extract(im2)
     keypoints_2 = descriptor_extractor.keypoints
     descriptors_2 = descriptor_extractor.descriptors
 
@@ -680,7 +598,7 @@ def fundamental_matrix_estimation(im1, im2):
 
     plt.gray()
 
-    plot_matches(ax[0], img_1, img_2, keypoints_1, keypoints_2,
+    plot_matches(ax[0], im1, im2, keypoints_1, keypoints_2,
                  matches[inliers], only_matches=True)
     ax[0].axis("off")
     ax[0].set_title("Inlier correspondences")
@@ -774,7 +692,7 @@ def plot_result_classif(regions, properties, labels, image):
             rect = mpatches.Rectangle((minc, minr), maxc - minc, maxr - minr,
                                       fill=False, edgecolor='blue', linewidth=1)
         else:
-            raise " Invalied with labels values"
+            raise ValueError(" Invalied with labels values")
         axs[0].add_patch(rect)
 
     sns.scatterplot(size=properties['extent'], hue=labels, x=properties['area'], y=properties["mean_intensity"],
@@ -784,7 +702,7 @@ def plot_result_classif(regions, properties, labels, image):
 
 
 if __name__ == '__main__':
-    file_path = "C:\\Users\\Antoine\\PycharmProjects\\tiff_image_processing\\venv\\Data\\C10DsRedlessxYw_emb11_Center_Out.tif"
+    file_path = os.path.join(DATA_PATH, FILE_NAME)
     im = io.imread(file_path)
     ch1 = im[:, :, :, 0]
     image = ch1[14]
