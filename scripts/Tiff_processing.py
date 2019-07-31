@@ -307,6 +307,16 @@ def local_maximas(img, h=None):
     return img, label_maxima, label_h_maxima
 
 
+# todo : try hysteris detection : https://scikit-image.org/docs/dev/auto_examples/filters/plot_hysteresis.html#sphx-glr-auto-examples-filters-plot-hysteresis-py
+
+# todo : Try entropy to enhace edges and facilitate detection https://scikit-image.org/docs/dev/auto_examples/filters/plot_entropy.html#sphx-glr-auto-examples-filters-plot-entropy-py
+
+# todo : try template matching https://scikit-image.org/docs/dev/auto_examples/features_detection/plot_template.html#sphx-glr-auto-examples-features-detection-plot-template-py
+
+# todo : [Top] Try blob detection : https://scikit-image.org/docs/dev/auto_examples/features_detection/plot_blob.html#sphx-glr-auto-examples-features-detection-plot-blob-py
+
+# todo : Try ridges operator to enhance edges : https://scikit-image.org/docs/dev/auto_examples/edges/plot_ridge_filter.html#sphx-glr-auto-examples-edges-plot-ridge-filter-py
+
 COL_DTYPES = {
     'area': int,
     'bbox': int,
@@ -626,7 +636,7 @@ def extract_intensity_features_from_region(region, im):
 #              PERSISTANCE TRACKING
 # ________________________________________________
 
-# Do not work with maximas map
+# todo : Do not work with maximas map
 def fundamental_matrix_estimation(im1, im2):
     descriptor_extractor = ORB()
 
@@ -679,6 +689,7 @@ def fundamental_matrix_estimation(im1, im2):
     ax[1].set_title("Histogram of disparity errors")
 
 
+# todo : integrate the function in 3D layers analyzer
 def overlaped_regions(im1, regions1, im2, regions2, threshold=100):
     """
     Identify overlaped regions between two images. Return a list of tuple containing (region from img 1, region from img 2)
@@ -702,17 +713,17 @@ def overlaped_regions(im1, regions1, im2, regions2, threshold=100):
     label_overlap_image = label(overlap_bin)
     overlap_regions, df_overlap_prop = region_properties(label_overlap_image)
     centroids = [list(region.centroid) for region in overlap_regions]
-    centroids = [ (round(centroid[0]).astype('Int64'), round(centroid[1]).astype('Int64')) for centroid in centroids]
+    centroids = [(round(centroid[0]).astype('Int64'), round(centroid[1]).astype('Int64')) for centroid in centroids]
 
-    def build_regions_table(regions) :
+    def build_regions_table(regions):
         """
         Build dictionnary to find region id thanks to coordinate research
         :param regions: List of regions
         :return: region_table: Dictionnary
         """
         regions_table = {}
-        for idx, region in enumerate(regions1) :
-            for coord in region.coords :
+        for idx, region in enumerate(regions1):
+            for coord in region.coords:
                 regions_table[(coord[0], coord[1])] = idx
         return regions_table
 
@@ -722,11 +733,11 @@ def overlaped_regions(im1, regions1, im2, regions2, threshold=100):
     region_couples = []
     print("start mapping")
     fails = 0
-    for centroid in centroids :
-        try :
+    for centroid in centroids:
+        try:
             region_couples.append((regions1[regions1_table[centroid]], regions2[regions2_table[centroid]]))
-        except Exception as e :
-            fails+=1
+        except Exception as e:
+            fails += 1
             pass
     print(len(centroids))
     print(len(region_couples))

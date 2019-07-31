@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 from skimage import io
 import numpy as np
 
+
 def display_file(file_path):
     im = io.imread(file_path)
     multi_slice_viewer(im)
@@ -9,20 +10,20 @@ def display_file(file_path):
 
 
 def multi_slice_viewer(volume):
-    if len(volume.shape) == 4 :
+    if len(volume.shape) == 4:
         volume = [volume]
     remove_keymap_conflicts({'j', 'k'})
     for i in np.arange(len(volume)):
         fig, ax = plt.subplots()
-        ax_config(volume[i],ax)
+        ax_config(volume[i], ax)
         fig.canvas.mpl_connect('scroll_event', process_mouse)
         fig.canvas.mpl_connect('key_press_event', process_key)
 
-def ax_config(volume,ax):
+
+def ax_config(volume, ax):
     ax.volume = volume
     ax.index = volume.shape[0] // 2
     ax.imshow(volume[ax.index])
-
 
 
 def process_key(event):
