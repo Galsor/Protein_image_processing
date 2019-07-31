@@ -343,10 +343,10 @@ def region_properties(label_image, image=None, min_area=1, properties=None, sepa
             inconsistent handling of images with singleton dimensions. To
             recover the old behaviour, use
             ``regionprops(np.squeeze(label_image), ...)``.
-    min_size : int, optional
+    min_area : int, optional
         Minimum area size of regions
         Default is 1.
-    intensity_image : (N, M) ndarray, optional
+    image : (N, M) ndarray, optional
         Intensity (i.e., input) image with same size as labeled image.
         Default is None.
     properties : tuple or list of str, optional
