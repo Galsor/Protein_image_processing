@@ -1,5 +1,5 @@
 
-from scripts.Tiff_processing import region_properties, label_filter
+from scripts.Tiff_processing import region_properties, label_filter, overlaped_regions
 from skimage import io
 
 
@@ -8,23 +8,36 @@ class RegionFrame:
 
     def __init__(self, regions_properties):
         region_id = 1
-        regions_ids =[]
+        regions_ids = []
         self.regions = {}
         for region in regions_properties:
             Region3D(region, region_id)
             regions_ids.append(region_id)
             self.regions[region_id] = region
             region_id += 1
-        self.layers = { 0: regions_ids}
+        self.map = {0: regions_ids}
 
-    def get_region3D(self, region_id ):
+    def get_region3D(self, region_id):
         return self.regions[region_id]
 
-    def get_layer(self, index):
-        return self.layers[index]
-
     def get_last_layer(self):
-        return self.layers[max(self.layers.keys())]
+        return max(self.map.keys())
+
+    def get_map(self, index):
+        return self.map[index]
+
+    def get_last_map(self):
+        return self.map[self.get_last_layer()]
+
+    def get_regions_in_layer(self, index):
+        region_layer = {}
+        for i in self.get_map(index).items:
+            region = self.get_region3D(i)
+            region_layer[i] = region
+        return region_layer
+
+    def get_regions_in_last_layer(self):
+        return self.get_regions_in_layer(self.get_last_layer())
 
     def enrich_region3D(self, couples):
         #TODO to be implemented
@@ -61,12 +74,17 @@ def extract_regions(tiff_file, channel):
         raise e
 
     init = True
-    for img in tiff :
+    for img in tiff:
         regions, df_properties = region_properties(label_filter(img)[0], img, min_area= 4 )
         if init:
             rf = RegionFrame(regions)
-            init=False
+            init = False
+            prev_img = img
         else:
+            region_dict = rf.get_regions_in_last_layer()
+            region_couples = overlaped_regions(img, regions, prev_img, region_dict)
+
+            prev_img = img
             #TODO:
             # - compare images
             # - add layer with the existing ones

@@ -625,6 +625,8 @@ def overlaped_regions(im1, regions1, im2, regions2, threshold=100):
     :return: region_couples : list<(RegionProperties, RegionProperties)>
         The pairs of regions that overlap from im1 to im2.
     """
+    #todo : adapter le code pour permettre l'usage du dict de region
+
     bin1 = im1 > threshold
     bin2 = im2 > threshold
     overlap_bin = np.logical_and(bin1, bin2)
