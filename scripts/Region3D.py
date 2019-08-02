@@ -1,5 +1,7 @@
 from scripts.Tiff_processing import region_properties, label_filter, overlaped_regions
 from skimage import io
+import numpy as np
+import pandas as pd
 
 
 class RegionFrame:
@@ -83,6 +85,14 @@ class RegionFrame:
     def get_amount_of_regions3D(self):
         return len(self.regions)
 
+    def extract_features(self):
+        df = pd.DataFrame()
+        for r in self.regions.values():
+            features = r.extract_features()
+            df.append(features, ignore_index=True)
+        df = df.set_index(["id"])
+        return df
+
 
 class Region3D:
     def __init__(self, region, id, layer_id):
@@ -99,6 +109,85 @@ class Region3D:
     def get_id(self):
         return self.id
 
+    # Features extraction for classification
+    def get_area(self):
+        area = 0
+        for r in self.layers.values():
+            area += r.area
+        return area
+
+    def get_coords(self):
+        coords_3D = []
+        for layer_id, r in self.layers.items():
+            layer_coords = [[coord[0], coord[1], layer_id] for coord in r.coords]
+            coords_3D.append(layer_coords)
+        return coords_3D
+
+    def get_total_intensity(self):
+        total_intensity = 0
+        for r in self.layers.values():
+            total_intensity += np.sum(r.intensity_image)
+        return total_intensity
+
+    def get_mean_intensity(self):
+        means = []
+        for r in self.layers.values():
+            means.append(r.mean_intensity)
+        mean = np.mean(means)
+        return mean
+
+    def get_max_intensity(self):
+        maxs = []
+        for r in self.layers.values():
+            maxs.append(r.max_intensity)
+        max = np.max(maxs)
+        return max
+
+    def get_min_intensity(self):
+        mins = []
+        for r in self.layers.values():
+            mins.append(r.min_intensity)
+        min = np.min(mins)
+        return min
+
+    def get_centroid_3D(self):
+        centroids = self.get_local_centroids()
+        x = int(np.sum([c[0] for c in centroids]) / float(len(centroids)))
+        y = int(np.sum([c[1] for c in centroids]) / float(len(centroids)))
+        z = np.mean(list(self.layers.keys())).astype(int)
+        return (x, y, z)
+
+    def get_local_centroids(self):
+        centroids = []
+        for r in self.layers.values():
+            centroids.append(r.centroid)
+        return centroids
+
+    def get_equivalent_sphere(self):
+        # TODO : return radius and centroids coordinate
+
+        pass
+
+    def get_extent(self):
+        """Ratio of pixels in the region to pixels in the total bounding box. Computed as area / (rows * cols * height)"""
+        coords = np.array(self.get_coords())
+        rows = np.amax(coords[:, :, 0]) - np.amin(coords[:, :, 0]) + 1
+        cols = np.amax(coords[:, :, 1]) - np.amin(coords[:, :, 1]) + 1
+        height = np.amax(coords[:, :, 2]) - np.amin(coords[:, :, 2]) + 1
+        extent = self.get_area() / np.prod([rows, cols, height])
+        return extent
+
+    def extract_features(self):
+        return {"id ": self.id,
+                "area": self.get_area(),
+                "total_intensity": self.get_total_intensity(),
+                "mean_intensity": self.get_mean_intensity(),
+                "max_intensity": self.get_max_intensity(),
+                "min_intensity": self.get_min_intensity(),
+                "centroid_3D": self.get_centroid_3D(),
+                "extent": self.get_extent()
+                }
+
 
 def extract_regions(tiff_file, channel=0):
     tiff = io.imread(tiff_file)
@@ -113,6 +202,7 @@ def extract_regions(tiff_file, channel=0):
 
     init = True
     for layer, img in enumerate(ch):
+        print("_" * 80)
         print("Layer {}".format(layer))
         print("_" * 80)
         regions, df_properties = region_properties(label_filter(img)[0], img, min_area=1)
@@ -130,12 +220,10 @@ def extract_regions(tiff_file, channel=0):
             prev_img = img
 
     print("Total amount of regions detected {}".format(rf.get_amount_of_regions3D()))
-    return rf.get_amount_of_regions3D()
+    return rf
 
 
-if __name__ == '__main__':
-    file_path = "C:\\Users\\Antoine\\PycharmProjects\\Protein_image_processing\\data\\" \
-                "C10DsRedlessxYw_emb11_Center_Out.tif"
+def test_pipeline():
     file_path_template = "C:\\Users\\Antoine\\PycharmProjects\\Protein_image_processing\\data\\train\\" \
                          "C10DsRedlessxYw_emb{}_Center_Out.tif"
     EMBRYOS = {1: (77, 24221), 7: (82, 23002), 8: (71, 15262), 10: (92, 23074)}
@@ -144,10 +232,18 @@ if __name__ == '__main__':
         results = {}
         for embryo in EMBRYOS.keys():
             file_path = file_path_template.format(embryo)
-            results[embryo] = extract_regions(file_path)
+            results[embryo] = extract_regions(file_path).get_amount_of_regions3D()
         for embryo, r in results.items():
             expected = EMBRYOS[embryo][0] + EMBRYOS[embryo][1]
             print(" {} (expected {} ) proteins detected for embryo {}").format(r, expected, embryo)
 
     except Exception as e:
         raise e
+
+
+if __name__ == '__main__':
+    file_path = "C:\\Users\\Antoine\\PycharmProjects\\Protein_image_processing\\data\\" \
+                "C10DsRedlessxYw_emb11_Center_Out.tif"
+    rf = extract_regions(file_path)
+    df = rf.extract_features()
+    print(df.head())

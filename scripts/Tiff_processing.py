@@ -722,57 +722,17 @@ def plot_result_classif(regions, properties, labels, image):
 
 
 if __name__ == '__main__':
-    file_path = os.path.join(DATA_PATH, FILE_NAME)
-    im = io.imread(file_path)
-    ch1 = im[:, :, :, 0]
-    image = ch1[14]
-    next = ch1[15]
+    #file_path = os.path.join(DATA_PATH, FILE_NAME)
+    #im = io.imread(file_path)
+    #ch1 = im[:, :, :, 0]
 
-    regions_14, df_props_14 = region_properties(label_filter(image)[0], image, min_area=4)
-    regions_15, df_props_15 = region_properties(label_filter(next)[0], next, min_area=4)
-
-    overlaped_regions(image, regions_14, next, regions_15)
-
-    # plot_img(image, title="Channel 1, z=14")
-    # label_image, image_label_overlay, binary = label_filter(ch1[14])
-    # regions, df_props = region_properties(label_image, image, min_area=4, properties=['extent','max_intensity','area',"mean_intensity"])
-
-    # if col.dtype is object or col.isnull() == True then drop column
-    # features = df_props.drop(["coords","convex_image","filled_image","image","intensity_image", "slice", "moments_normalized-0-0","moments_normalized-0-1", "moments_normalized-1-0","weighted_moments_normalized-0-0","weighted_moments_normalized-0-1", "weighted_moments_normalized-1-0"], axis=1)
-    # print(features.isnull().any().to_string())
-
-    # kmeans, labels = kmeans_classification(df_props)
-    # plot_result_classif(regions,df_props,labels,label_image)
-
-    plt.show()
-    # hough_circle_detection(test[10])
-
-    # img_10, label_maxima_10, label_h_maxima_10 = local_maximas(test[10], h=0.05)
-    # img_11, label_maxima_11, label_h_maxima_11 = local_maximas(test[11], h=0.05)
-
-    # hough_elliptic_detection(test[10])
-
-    # with tifffile.TiffFile(file_path) as tif:
-    #     data = tif.asarray()
-    #     print("Pages")
-    #     print(len(tif.pages))
-    #     print("Series")
-    #     print(len(tif.series))
-    #     print("is flagged")
-    #     #print(tif.is_flag())
-    #     print("to string")
-    #     print(str(tif))
-    #     page = tif.pages[50]
-    #     print("tags")
-    #     print(page.tags.keys())
-    #     print("photometric")
-    #     print(page.photometric)
-    #     #rgb = page.asrgb()
-    # #io.imshow(red[14])
-    # #multi_slice_viewer(red)
-    # #tifffile.imshow(red, title="RGB", cmap='gnuplot')
-    # #tifffile.imshow(data, photometric='MINISBLACK',cmap='gnuplot', title='MINISBLACK')
-    # print(data.shape)
-
-    # label_image_region(im[0])
-    # display_file(file_path)
+    img = np.zeros([20, 20]).astype(np.int_)
+    img[5:15, 5:15] = 5
+    img[9:10, 9:10] = 10
+    bin = img.copy()
+    bin[5:15, 5:15] = 1
+    region = regionprops(bin, img)[0]
+    from scripts.Region3D import Region3D
+    r = Region3D(region, 0, 0)
+    features = r.extract_features()
+    print(features)
