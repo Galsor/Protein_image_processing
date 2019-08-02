@@ -36,6 +36,7 @@ OBJ : Compter le nombre de TS et single mol par noyau
 Règle : Max 2 TS par noyau
 
 """
+#todo : replace prints by loggings
 
 FILE_NAME = "C10DsRedlessxYw_emb11_Center_Out.tif"
 DATA_PATH = "C:\\Users\\Antoine\\PycharmProjects\\Protein_image_processing\\data"
@@ -608,27 +609,35 @@ def fundamental_matrix_estimation(im1, im2):
 
 
 # todo : integrate the function in 3D layers analyzer
-def overlaped_regions(im1, regions1, im2, regions2, threshold=100):
+def overlaped_regions(im1, regions1, prev_im, prev_regions, threshold=100):
     """
     Identify overlaped regions between two images. Return a list of tuple containing (region from img 1, region from img 2)
     :param im1: (N, M) ndarray
         First image to compare
     :param regions1: list<RegionProperties>
         RegionProperties extracted from im1
-    :param im2: (N, M) ndarray
-        Second image to compare
-    :param regions2: list<RegionProperties>
-        RegionProperties extracted from im2
+    :param prev_im: (N, M) ndarray
+        previous image to compare with
+    :param prev_regions: list<RegionProperties>
+        RegionProperties extracted from previous image
     :param threshold: float, int
         Value of threshold used to generate binary image to compare
         Default : 100
-    :return: region_couples : list<(RegionProperties, RegionProperties)>
-        The pairs of regions that overlap from im1 to im2.
+    :return: region_couples : dict<(int, RegionProperties)>
+        The regions that overlap from im1 to im2 mapped with their Region3D_id
+    :return: new_regions_matched_ids: list<int>
+        Ids of regions from the new image that matched with existing Region3D
     """
-    #todo : adapter le code pour permettre l'usage du dict de region
 
+    if isinstance(prev_regions, dict):
+        prev_regions_dict = prev_regions
+        prev_regions = prev_regions.items()
+    elif not isinstance(prev_regions, list):
+        raise TypeError("Wrong type of values for regions2")
+
+    #Compute difference between the two images
     bin1 = im1 > threshold
-    bin2 = im2 > threshold
+    bin2 = prev_im > threshold
     overlap_bin = np.logical_and(bin1, bin2)
     label_overlap_image = label(overlap_bin)
     overlap_regions, df_overlap_prop = region_properties(label_overlap_image)
@@ -641,28 +650,37 @@ def overlaped_regions(im1, regions1, im2, regions2, threshold=100):
         :param regions: List of regions
         :return: region_table: Dictionnary
         """
+        if isinstance(regions, list):
+            regions = enumerate(regions)
+        elif isinstance(regions, dict):
+            regions = regions.items()
+        else:
+            raise TypeError("Wrong type of region callable. Use list or dict")
+
         regions_table = {}
-        for idx, region in enumerate(regions1):
+        for idx, region in regions:
             for coord in region.coords:
                 regions_table[(coord[0], coord[1])] = idx
         return regions_table
 
     regions1_table = build_regions_table(regions1)
-    regions2_table = build_regions_table(regions2)
+    prev_regions_table = build_regions_table(prev_regions_dict)
 
-    region_couples = []
+    existing_regions_map = {}
+    new_regions_matched_ids = []
     print("start mapping")
-    fails = 0
+    matching_fail = 0
     for centroid in centroids:
         try:
-            region_couples.append((regions1[regions1_table[centroid]], regions2[regions2_table[centroid]]))
+            existing_regions_map[prev_regions_table[centroid]] = regions1[regions1_table[centroid]]
+            new_regions_matched_ids.append(regions1_table[centroid])
         except Exception as e:
-            fails += 1
-            pass
-    print(len(centroids))
-    print(len(region_couples))
-    print(fails)
-    return region_couples
+            print(repr(e))
+            matching_fail += 1
+    print("Amount of overlaped regions :" + str(len(centroids)))
+    print("Amount of regions mapped : " + str(len(existing_regions_map)))
+    print("Matching fails ratio :"+ str(round(matching_fail/len(centroids)*100))+"%")
+    return existing_regions_map, new_regions_matched_ids
 
 
 # ________________________________________________
