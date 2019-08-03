@@ -89,8 +89,7 @@ class RegionFrame:
         df = pd.DataFrame()
         for r in self.regions.values():
             features = r.extract_features()
-            df.append(features, ignore_index=True)
-        df = df.set_index(["id"])
+            df = df.append(features, ignore_index=True)
         return df
 
 
@@ -120,7 +119,7 @@ class Region3D:
         coords_3D = []
         for layer_id, r in self.layers.items():
             layer_coords = [[coord[0], coord[1], layer_id] for coord in r.coords]
-            coords_3D.append(layer_coords)
+            coords_3D += layer_coords
         return coords_3D
 
     def get_total_intensity(self):
@@ -171,9 +170,9 @@ class Region3D:
     def get_extent(self):
         """Ratio of pixels in the region to pixels in the total bounding box. Computed as area / (rows * cols * height)"""
         coords = np.array(self.get_coords())
-        rows = np.amax(coords[:, :, 0]) - np.amin(coords[:, :, 0]) + 1
-        cols = np.amax(coords[:, :, 1]) - np.amin(coords[:, :, 1]) + 1
-        height = np.amax(coords[:, :, 2]) - np.amin(coords[:, :, 2]) + 1
+        rows = np.amax(coords[ :, 0]) - np.amin(coords[ :, 0]) + 1
+        cols = np.amax(coords[ :, 1]) - np.amin(coords[:, 1]) + 1
+        height = np.amax(coords[ :, 2]) - np.amin(coords[ :, 2]) + 1
         extent = self.get_area() / np.prod([rows, cols, height])
         return extent
 
@@ -189,7 +188,7 @@ class Region3D:
                 }
 
 
-def extract_regions(tiff_file, channel=0):
+def extract_regions(tiff_file, channel=0, min_area = 2):
     tiff = io.imread(tiff_file)
 
     if not isinstance(channel, int):
@@ -205,7 +204,7 @@ def extract_regions(tiff_file, channel=0):
         print("_" * 80)
         print("Layer {}".format(layer))
         print("_" * 80)
-        regions, df_properties = region_properties(label_filter(img)[0], img, min_area=1)
+        regions, df_properties = region_properties(label_filter(img)[0], img, min_area=min_area)
         if init and regions:
             rf = RegionFrame(regions)
             init = False
@@ -240,10 +239,22 @@ def test_pipeline():
     except Exception as e:
         raise e
 
+def extract_cells(tiff_file):
+    min_area = 500
+    rf = extract_regions(tiff_file, channel = 2)
+    return rf
+
+def extract_molecules(tiff_file):
+    min area = 2
+    rf= extract_regions(tiff_file, channel = 0)
+    return rf
 
 if __name__ == '__main__':
-    file_path = "C:\\Users\\Antoine\\PycharmProjects\\Protein_image_processing\\data\\" \
-                "C10DsRedlessxYw_emb11_Center_Out.tif"
-    rf = extract_regions(file_path)
+    folder_path = "C:\\Users\\Antoine\\PycharmProjects\\Protein_image_processing\\data\\"
+    file = "C10DsRedlessxYw_emb11_Center_Out.tif"
+    file_path = folder_path+file
+    #rf = extract_regions(file_path)
+    rf = extract_cells(file_path)
     df = rf.extract_features()
+    df.to_csv(folder_path+"Features_cells_{}.csv".format(file), index=False)
     print(df.head())

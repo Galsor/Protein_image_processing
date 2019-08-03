@@ -395,7 +395,7 @@ def region_properties(label_image, image=None, min_area=1, properties=None, sepa
     else:
         try:
             regions = regionprops(label_image, image)
-        except Exception as err:
+        except BaseException as err:
             raise repr(err)
 
     # Select only the regions up to the min area criteria
@@ -438,31 +438,21 @@ def region_properties(label_image, image=None, min_area=1, properties=None, sepa
     return regions, r_properties
 
 
-def demo_regions(image, label_image):
+def demo_regions(image, label_image, min_area = 4, title="Demo of region detection" ):
     fig, axs = plt.subplots(ncols=2, figsize=(10, 6))
     axs[0].imshow(image, cmap='gnuplot2')
 
     # Compute regions properties
-    regions, props = region_properties(label_image, image, min_area=4,
+    regions, props = region_properties(label_image, image, min_area=min_area,
                                        properties=['extent', 'max_intensity', 'area', "mean_intensity"])
-    intensity_features = []
-    for region in regions:
-        # take regions with large enough areas
-        if region.area >= 4:
-            # draw rectangle around segmented coins
-            minr, minc, maxr, maxc = region.bbox
-            rect = mpatches.Rectangle((minc, minr), maxc - minc, maxr - minr,
-                                      fill=False, edgecolor='red', linewidth=2)
-            axs[0].add_patch(rect)
-            intensity_features.append(extract_intensity_features_from_region(region, image))
-
     print(props.shape)
     print(props.head())
-    print(intensity_features[0:5])
 
     sns.scatterplot(size=props['extent'], hue=props['max_intensity'], x=props['area'], y=props["mean_intensity"],
                     ax=axs[1])
+    axs[1].set_title("{} regions detected".format(props.shape[0]))
     axs[0].set_axis_off()
+    fig.suptitle(title, fontsize=14, fontweight = 'bold')
     plt.tight_layout()
 
     return regions, props
@@ -501,6 +491,11 @@ def label_filter(image, filter=None, window_size=5, k=0.2):
         thresh = 100
     elif isinstance(filter, int):
         thresh = filter
+    elif filter < 1 and filter > 0 :
+        max = np.amax(image)
+        min = np.amin(image)
+        intensity_band = max - min
+        thresh = intensity_band * filter
     elif filter == "otsu":
         thresh = threshold_otsu(image)
     elif filter == "niblack":
@@ -722,17 +717,14 @@ def plot_result_classif(regions, properties, labels, image):
 
 
 if __name__ == '__main__':
-    #file_path = os.path.join(DATA_PATH, FILE_NAME)
-    #im = io.imread(file_path)
-    #ch1 = im[:, :, :, 0]
+    file_path = os.path.join(DATA_PATH, FILE_NAME)
+    tiff = io.imread(file_path)
+    ch = tiff[:, :, :, 0]
+    img = ch[10]
 
-    img = np.zeros([20, 20]).astype(np.int_)
-    img[5:15, 5:15] = 5
-    img[9:10, 9:10] = 10
-    bin = img.copy()
-    bin[5:15, 5:15] = 1
-    region = regionprops(bin, img)[0]
-    from scripts.Region3D import Region3D
-    r = Region3D(region, 0, 0)
-    features = r.extract_features()
-    print(features)
+    for filter in np.arange(0.05, 0.15, 0.05):
+        label_img = label_filter(img, filter=filter)[0]
+        demo_regions(img, label_img, min_area=2, title="Démo avec filtre {}%".format(round(filter*100)))
+
+
+    plt.show()
