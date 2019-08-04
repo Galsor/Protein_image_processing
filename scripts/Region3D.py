@@ -188,7 +188,7 @@ class Region3D:
                 }
 
 
-def extract_regions(tiff_file, channel=0, min_area = 2):
+def extract_regions(tiff_file, channel=0, min_area = 2, filter = 0.10):
     tiff = io.imread(tiff_file)
 
     if not isinstance(channel, int):
@@ -204,7 +204,7 @@ def extract_regions(tiff_file, channel=0, min_area = 2):
         print("_" * 80)
         print("Layer {}".format(layer))
         print("_" * 80)
-        regions, df_properties = region_properties(label_filter(img)[0], img, min_area=min_area)
+        regions, df_properties = region_properties(label_filter(img, filter = filter)[0], img, min_area=min_area)
         if init and regions:
             rf = RegionFrame(regions)
             init = False
@@ -241,12 +241,12 @@ def test_pipeline():
 
 def extract_cells(tiff_file):
     min_area = 500
-    rf = extract_regions(tiff_file, channel = 2)
+    rf = extract_regions(tiff_file, channel = 2, min_area=min_area)
     return rf
 
 def extract_molecules(tiff_file):
-    min area = 2
-    rf= extract_regions(tiff_file, channel = 0)
+    min_area = 2
+    rf= extract_regions(tiff_file, channel = 0, min_area=min_area)
     return rf
 
 if __name__ == '__main__':

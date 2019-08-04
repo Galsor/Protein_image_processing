@@ -36,7 +36,7 @@ OBJ : Compter le nombre de TS et single mol par noyau
 Règle : Max 2 TS par noyau
 
 """
-#todo : replace prints by loggings
+# todo : replace prints by loggings
 
 FILE_NAME = "C10DsRedlessxYw_emb11_Center_Out.tif"
 DATA_PATH = "C:\\Users\\Antoine\\PycharmProjects\\Protein_image_processing\\data"
@@ -438,21 +438,71 @@ def region_properties(label_image, image=None, min_area=1, properties=None, sepa
     return regions, r_properties
 
 
-def demo_regions(image, label_image, min_area = 4, title="Demo of region detection" ):
-    fig, axs = plt.subplots(ncols=2, figsize=(10, 6))
-    axs[0].imshow(image, cmap='gnuplot2')
-
+def demo_regions(image, label_image, min_area=4, title="Demo of region detection"):
     # Compute regions properties
     regions, props = region_properties(label_image, image, min_area=min_area,
-                                       properties=['extent', 'max_intensity', 'area', "mean_intensity"])
+                                       properties=['extent', 'max_intensity', 'area', "mean_intensity", "bbox"])
+
+    fig, axs = plt.subplots(ncols=2, figsize=(10, 6))
+
+    def draw_rectangles(properties, picked_region=None):
+        axs[0].clear()
+        axs[0].imshow(image, cmap='gnuplot2')
+        print(picked_region)
+        if picked_region is not None:
+            picked_minr = picked_region['bbox-0'].values
+            picked_minc = picked_region['bbox-1'].values
+            picked_maxr = picked_region['bbox-2'].values
+            picked_maxc = picked_region['bbox-3'].values
+            picked_bbox = [picked_minr, picked_minc, picked_maxr, picked_maxc]
+            print(picked_bbox)
+        for index, row in properties.iterrows():  # draw rectangle around segmented coins
+            minr = properties['bbox-0'].iloc[index]
+            minc = properties['bbox-1'].iloc[index]
+            maxr = properties['bbox-2'].iloc[index]
+            maxc = properties['bbox-3'].iloc[index]
+            bbox = [minr, minc, maxr, maxc]
+
+            if picked_region is not None and picked_bbox == bbox:
+                rect = mpatches.Rectangle((minc, minr), maxc - minc, maxr - minr,
+                                          fill=False, edgecolor='red', linewidth=2)
+            else:
+                rect = mpatches.Rectangle((minc, minr), maxc - minc, maxr - minr,
+                                          fill=False, edgecolor='blue', linewidth=2)
+            axs[0].add_patch(rect)
+
+    draw_rectangles(props)
+
     print(props.shape)
     print(props.head())
 
-    sns.scatterplot(size=props['extent'], hue=props['max_intensity'], x=props['area'], y=props["mean_intensity"],
-                    ax=axs[1])
+    points = axs[1].scatter(x=props['area'], y=props["mean_intensity"], facecolors=["C0"] * len(props),
+                            edgecolors=["C0"] * len(props), picker=True)
+    fc = points.get_facecolors()
+
+    def change_point_color(indexes):
+        for i in indexes:  # might be more than one point if ambiguous click
+            new_fc = fc.copy()
+            new_fc[i, :] = (1, 0, 0, 1)
+            points.set_facecolors(new_fc)
+            points.set_edgecolors(new_fc)
+        fig.canvas.draw_idle()
+
     axs[1].set_title("{} regions detected".format(props.shape[0]))
     axs[0].set_axis_off()
-    fig.suptitle(title, fontsize=14, fontweight = 'bold')
+    fig.suptitle(title, fontsize=14, fontweight='bold')
+
+    def onpick(event):
+        print("Fire")
+        ind = event.ind
+        if len(ind) > 1:
+            ind = [ind[0]]
+        change_point_color(ind)
+        region_props_picked = props.iloc[ind]
+        draw_rectangles(props, region_props_picked)
+
+    fig.canvas.mpl_connect('pick_event', onpick)
+
     plt.tight_layout()
 
     return regions, props
@@ -491,7 +541,7 @@ def label_filter(image, filter=None, window_size=5, k=0.2):
         thresh = 100
     elif isinstance(filter, int):
         thresh = filter
-    elif filter < 1 and filter > 0 :
+    elif filter < 1 and filter > 0:
         max = np.amax(image)
         min = np.amin(image)
         intensity_band = max - min
@@ -630,7 +680,7 @@ def overlaped_regions(im1, regions1, prev_im, prev_regions, threshold=100):
     elif not isinstance(prev_regions, list):
         raise TypeError("Wrong type of values for regions2")
 
-    #Compute difference between the two images
+    # Compute difference between the two images
     bin1 = im1 > threshold
     bin2 = prev_im > threshold
     overlap_bin = np.logical_and(bin1, bin2)
@@ -674,7 +724,7 @@ def overlaped_regions(im1, regions1, prev_im, prev_regions, threshold=100):
             matching_fail += 1
     print("Amount of overlaped regions :" + str(len(centroids)))
     print("Amount of regions mapped : " + str(len(existing_regions_map)))
-    print("Matching fails ratio :"+ str(round(matching_fail/len(centroids)*100))+"%")
+    print("Matching fails ratio :" + str(round(matching_fail / len(centroids) * 100)) + "%")
     return existing_regions_map, new_regions_matched_ids
 
 
@@ -719,12 +769,40 @@ def plot_result_classif(regions, properties, labels, image):
 if __name__ == '__main__':
     file_path = os.path.join(DATA_PATH, FILE_NAME)
     tiff = io.imread(file_path)
-    ch = tiff[:, :, :, 0]
+    ch = tiff[:, :, :, 2]
     img = ch[10]
 
-    for filter in np.arange(0.05, 0.15, 0.05):
-        label_img = label_filter(img, filter=filter)[0]
-        demo_regions(img, label_img, min_area=2, title="Démo avec filtre {}%".format(round(filter*100)))
+    label_img = label_filter(img, filter=0.10)[0]
 
-
+    demo_regions(img, label_img, min_area=500, title="Choudamdoum")
     plt.show()
+    """
+
+    X_t = np.random.rand(10, 4) * 20
+
+    fig, ax1 = plt.subplots()
+
+    points = ax1.scatter(X_t[:, 0], X_t[:, 1],
+                         facecolors=["C0"] * len(X_t), edgecolors=["C0"] * len(X_t), picker=True)
+    fc = points.get_facecolors()
+    print(points)
+
+    def plot_curves(indexes):
+        for i in indexes:  # might be more than one point if ambiguous click
+            new_fc = fc.copy()
+            new_fc[i, :] = (1, 0, 0, 1)
+            points.set_facecolors(new_fc)
+            points.set_edgecolors(new_fc)
+        fig.canvas.draw_idle()
+
+
+    def onpick(event):
+        ind = event.ind
+        data = points.get_cursor_data(event)
+        print(data)
+        plot_curves(list(ind))
+
+
+    fig.canvas.mpl_connect('pick_event', onpick)
+    plt.show()
+    """
