@@ -1,7 +1,10 @@
-from scripts.Tiff_processing import region_properties, label_filter, overlaped_regions
+from scripts.Tiff_processing import region_properties, label_filter, overlaped_regions, kmeans_classification
+import scripts.File_manager as fm
+
 from skimage import io
 import numpy as np
 import pandas as pd
+
 
 
 class RegionFrame:
@@ -122,6 +125,9 @@ class Region3D:
             coords_3D += layer_coords
         return coords_3D
 
+    def get_layers(self):
+        return list(self.layers.keys())
+
     def get_total_intensity(self):
         total_intensity = 0
         for r in self.layers.values():
@@ -177,7 +183,7 @@ class Region3D:
         return extent
 
     def extract_features(self):
-        return {"id ": self.id,
+        return {"id": self.id,
                 "area": self.get_area(),
                 "total_intensity": self.get_total_intensity(),
                 "mean_intensity": self.get_mean_intensity(),
@@ -186,10 +192,11 @@ class Region3D:
                 "centroid_3D": self.get_centroid_3D(),
                 "extent": self.get_extent()
                 }
+    # Todo :
+    # - "z": self.get_layers()
+    # - prévoir un one hot encoder sur les layers
 
-
-def extract_regions(tiff_file, channel=0, min_area = 2, filter = 0.10):
-    tiff = io.imread(tiff_file)
+def extract_regions(tiff, channel=0, min_area = 2, filter = 0.10):
 
     if not isinstance(channel, int):
         raise TypeError("Wrong type for channel value")
@@ -223,7 +230,7 @@ def extract_regions(tiff_file, channel=0, min_area = 2, filter = 0.10):
 
 
 def test_pipeline():
-    file_path_template = "C:\\Users\\Antoine\\PycharmProjects\\Protein_image_processing\\data\\train\\" \
+    file_path_template = "C:\\Users\\Antoine\\PycharmProjects\\Protein_image_processing\\data\\embryos\\" \
                          "C10DsRedlessxYw_emb{}_Center_Out.tif"
     EMBRYOS = {1: (77, 24221), 7: (82, 23002), 8: (71, 15262), 10: (92, 23074)}
 
@@ -239,22 +246,27 @@ def test_pipeline():
     except Exception as e:
         raise e
 
-def extract_cells(tiff_file):
-    min_area = 500
-    rf = extract_regions(tiff_file, channel = 2, min_area=min_area)
+def extract_cells(tiff, min_area = 500):
+    rf = extract_regions(tiff, channel = 2, min_area=min_area)
     return rf
 
-def extract_molecules(tiff_file):
-    min_area = 2
-    rf= extract_regions(tiff_file, channel = 0, min_area=min_area)
+def extract_molecules(tiff,min_area = 2):
+    rf= extract_regions(tiff, channel = 0, min_area=min_area)
     return rf
+
+#Extract des régions, classifications sur chaque layers et ajout de la labellisation par layer.
+# Sauvegarde de la labellisation pour chaque région
+
 
 if __name__ == '__main__':
     folder_path = "C:\\Users\\Antoine\\PycharmProjects\\Protein_image_processing\\data\\"
     file = "C10DsRedlessxYw_emb11_Center_Out.tif"
     file_path = folder_path+file
+    tiff = fm.get_tiff_file(11)
     #rf = extract_regions(file_path)
-    rf = extract_cells(file_path)
-    df = rf.extract_features()
-    df.to_csv(folder_path+"Features_cells_{}.csv".format(file), index=False)
-    print(df.head())
+    rf = extract_molecules(tiff)
+    features = rf.extract_features()
+    kmeans, labels = kmeans_classification(features)
+    labels.to_csv(folder_path+"Labels_cells_{}.csv".format(file), index=False)
+    result = pd.concat([features, labels], axis =1)
+    result.to_csv(folder_path+"Features_&_Labels_cells_{}.csv".format(file), index=False)
