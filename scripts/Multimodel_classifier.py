@@ -1,41 +1,133 @@
-from sklearn.model_selection import train_test_split
+import logging
 
-#TODO ne conserver que les modèles de clustering
-CLASSIFIERS =((RidgeClassifier(tol=1e-5, solver="lsqr"), "Ridge Classifier"),
-            #(Perceptron(max_iter = 25000), "Perceptron"),
-            (LogisticRegression(n_jobs=1, C=1e6), "Logisitic Regression"),
-            (MLPClassifier(hidden_layer_sizes=(75,), max_iter=25000, alpha=0.00001), "MLPC_V1"),
-            (MLPClassifier(hidden_layer_sizes= (80,), max_iter=30000, alpha = 1e-5), "MLPC_V2"),
-            (MLPClassifier(hidden_layer_sizes=(80,), max_iter= 30000, alpha=1e-7), "MLPC_V3"),
-            #(PassiveAggressiveClassifier(), "Passive-Aggressive"),
-            #(KNeighborsClassifier(n_neighbors=50), "kNN"),
-            (RandomForestClassifier(n_estimators=100), "Random forest"),
-            #(RandomForestRegressor(n_estimators=100), "Random Forest Regressor"),
-            #(SGDClassifier(alpha=.00001,penalty="l2"), "SGDC l2"),
-            #(NearestCentroid(), "NearestCentroid"),
-            (BernoulliNB(alpha=.01), "BenouilliNB"),
-            (LinearSVC(loss='l2', penalty="l2", dual=False, tol=1e-5), "Linear SVC"),
-            (GaussianNB(),"GaussianNB"))
+import scripts.File_manager as fm
+from scripts.Region3D import extract_molecules
+from sklearn.cluster import AffinityPropagation, AgglomerativeClustering, Birch, DBSCAN, OPTICS, FeatureAgglomeration, \
+    KMeans, MiniBatchKMeans, MeanShift, SpectralClustering
+import pandas as pd
 
-# TODO Ajouter l'accès aux trains data
-EMBRYOS = {1: (77, 24221), 7: (82, 23002), 8: (71, 15262), 10: (92, 23074)}
+NB_CLUSTER = 2
+CLUSTERERS = ((AffinityPropagation(), "Affinity propagation"),
+              (AgglomerativeClustering(n_clusters=NB_CLUSTER), "Agglomerative"),
+              (Birch(n_clusters=NB_CLUSTER), "Birch"),
+              (DBSCAN(), "DBSCAN"),
+              (OPTICS(), "OPTICS"),
+              (FeatureAgglomeration(n_clusters=NB_CLUSTER), "Feature agglomeration"),
+              (KMeans(n_clusters=NB_CLUSTER), "KMeans"),
+              (MiniBatchKMeans(n_clusters=NB_CLUSTER), "Mini KMeans"),
+              (MeanShift(), "MeanShift"),
+              (SpectralClustering(n_clusters=NB_CLUSTER), "Spectral clustering"))
+# TODO :
+# Test DBSCAN.algorithm = ‘auto’, ‘ball_tree’, ‘kd_tree’, ‘brute’
+# Test AgglomerativeClustering.linkage : {“ward”, “complete”, “average”, “single”}
+# test OPTICS
+#  .metric : Valid values for metric are:
+#     from scikit-learn: [‘cityblock’, ‘cosine’, ‘euclidean’, ‘l1’, ‘l2’, ‘manhattan’]
+#     from scipy.spatial.distance: [‘braycurtis’, ‘canberra’, ‘chebyshev’, ‘correlation’, ‘dice’, ‘hamming’, ‘jaccard’, ‘kulsinski’, ‘mahalanobis’, ‘minkowski’, ‘rogerstanimoto’, ‘russellrao’, ‘seuclidean’, ‘sokalmichener’, ‘sokalsneath’, ‘sqeuclidean’, ‘yule’]
+#  .cluster_method :  “xi” and “dbscan”.
+#  .algorithm : {‘auto’, ‘ball_tree’, ‘kd_tree’, ‘brute’}
+# Test FeatureAgglomeration
+# .afinity : [“euclidean”, “l1”, “l2”, “manhattan”, “cosine”, ‘precomputed’]
+# .linkage : {“ward”, “complete”, “average”, “single”}
+# Test SpectralClustering
+# .eigen_solver : {None, ‘arpack’, ‘lobpcg’, or ‘amg’}
+# .assign_labels : {‘kmeans’, ‘discretize’},
+"""
+cluster.AffinityPropagation([damping, …]) 	Perform Affinity Propagation Clustering of data.
+cluster.AgglomerativeClustering([…]) 	Agglomerative Clustering
+cluster.Birch([threshold, branching_factor, …]) 	Implements the Birch clustering algorithm.
+cluster.DBSCAN([eps, min_samples, metric, …]) 	Perform DBSCAN clustering from vector array or distance matrix.
+cluster.OPTICS([min_samples, max_eps, …]) 	Estimate clustering structure from vector array
+cluster.FeatureAgglomeration([n_clusters, …]) 	Agglomerate features.
+cluster.KMeans([n_clusters, init, n_init, …]) 	K-Means clustering
+cluster.MiniBatchKMeans([n_clusters, init, …]) 	Mini-Batch K-Means clustering
+cluster.MeanShift([bandwidth, seeds, …]) 	Mean shift clustering using a flat kernel.
+cluster.SpectralClustering
+"""
+
+TRAIN_EMBRYOS = {1: (77, 24221), 7: (82, 23002), 8: (71, 15262), 10: (92, 23074)}
 
 
-class MultimodelPredictor:
-    def __init__(self, path=data_path):
-        # Get and prep data for training
-        self.init = True
-        #get Training data
-        raw_df, self.df = get_data(path)
-        # Set pipeline for features extraction
-        self.pipeline = Pipeline([('vect', CountVectorizer()), ('tfidf', TfidfTransformer())])
-        df_vect = self.prep_data(self.df)
-        self.x_train, self.x_test, self.y_train, self.y_test = self.split_data(df_vect)
+def run_all_embryos():
+    for embryo in TRAIN_EMBRYOS.keys():
+        tiff = fm.get_tiff_file(embryo)
+        rf = extract_molecules(tiff)
+        features = rf.extract_features()
+        benchmark_clusterers(features, embryo)
 
-        # Instanciate and embryos models
+def benchmark_clusterers(features, embryo):
+    results = run_multiclustering(features)
 
-        self.classifiers = self.get_best_classifiers(0.70)
-        self.init = False
+    labels_counts = pd.DataFrame(index=[0, 1], columns=results.columns)
+    try:
+        labels_counts["Expected"] = pd.Series({0: TRAIN_EMBRYOS[embryo][1], 1: TRAIN_EMBRYOS[embryo][0]})
+    except:
+        logging.info("No existing result to compare with.")
+
+    for col in results.columns:
+        d = results[col].value_counts().to_dict()
+        labels_counts[col] = labels_counts.index.map(d)
+    print(labels_counts)
+    fm.save_results(labels_counts, file_name="labels_results_embryo_{}.csv".format(embryo), timestamped = True)
+
+
+def run_multiclustering(features):
+    results = None
+    for clst, name in CLUSTERERS:
+        print("_"*80)
+        print("Start clustering with {}".format(name))
+        try:
+            clst.fit(features)
+            labels = pd.Series(clst.labels_, name=name)
+            if results is None:
+                results = labels
+            else:
+                results = pd.concat([results, labels],axis=1)
+            print("Success")
+        except Exception as e:
+            logging.warning("Fail of clustering with {}".format(name))
+            logging.warning(repr(e))
+            print("Fail")
+    return results
+
+"""
+class MultimodelClustering:
+    def __init__(self):
+        pass
+
+
+    def benchmark_clusterers(self):
+        for embryo in TRAIN_EMBRYOS.keys():
+            tiff = fm.get_tiff_file(embryo)
+            rf = extract_molecules(tiff)
+            features = rf.extract_features()
+            results = self.run_clustering(features)
+            labels_counts = pd.DataFrame(index = [0,1], columns=results.columns)
+            labels_counts["Expected"] = pd.Series({0:TRAIN_EMBRYOS[embryo][1], 1:TRAIN_EMBRYOS[embryo][0]})
+            for col in results.columns:
+                d = results[col].value_counts().to_dict
+                labels_counts[col] = labels_counts.index.map(d)
+            print(labels_counts)
+            import datetime
+            labels_counts.to_csv("labels_results_embryo_{0}_{1}".format({0:embryo, 1:datetime.now()}))
+
+
+    def run_clustering(self, features):
+        results = None
+        for clst, name in CLUSTERERS:
+            try:
+                clst.fit(features)
+                labels = pd.Series(clst.labels_, name = name)
+                if results is None:
+                    results = labels
+                else :
+                    results = pd.concat(results, labels)
+            except Exception as e:
+                logging.warning("Fail of clustering with {]".format(name))
+                logging.warning(repr(e))
+        return results
+
+
 
     def get_best_classifiers(self, ratio):
         results = []
@@ -62,7 +154,7 @@ class MultimodelPredictor:
         return classifiers
 
     def split_data(self, df):
-        #TODO définir y et l'enlever du dataset
+        # TODO définir y et l'enlever du dataset
         y = df["Type"]
         x = df.drop("Type", axis=1)
         x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.05, random_state=42)
@@ -86,9 +178,9 @@ class MultimodelPredictor:
         logging.info("=" * 80)
         logging.info(preds)
 
-        #TODO compute classification score
+        # TODO compute classification score
         scores = compute_scores(preds)
-        #TODO Retains the best predictions
+        # TODO Retains the best predictions
         df_res = self.method_max(scores)
 
         return df_res
@@ -124,7 +216,6 @@ class MultimodelPredictor:
             df_pred = self.transcript_results(df_pred, raw_df)
         return df_pred
 
-
     def method_max(self, scores):
         pred = scores.idxmax(axis=1)
         total_preds = scores.iloc[0].sum()
@@ -151,3 +242,9 @@ class MultimodelPredictor:
         except Exception as e:
             logging.warning("Impossible to print results of classification")
             logging.warning(repr(e))
+"""
+
+if __name__ == '__main__':
+    features = fm.get_test_features()
+    features = features.drop('centroid_3D', axis=1)
+    benchmark_clusterers(features,11)
