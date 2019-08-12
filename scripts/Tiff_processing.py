@@ -2,9 +2,11 @@ import pandas as pd
 from skimage import io, color, measure
 import matplotlib.pyplot as plt
 import numpy as np
-from Multi_slice_viewer import display_file, multi_slice_viewer, ax_config, process_key
+from scripts.Multi_slice_viewer import display_file, multi_slice_viewer, ax_config, process_key
 import os
 import sys
+import scripts.File_manager as fm
+import logging
 
 # ________________________________________________
 # Imports for label region
@@ -438,8 +440,11 @@ def region_properties(label_image, image=None, min_area=1, properties=None, sepa
     return regions, r_properties
 
 
-def demo_regions(image, label_image, min_area=4, title="Demo of region detection"):
+def demo_regions(image, label_image, show_image = None, min_area=4, title="Demo of region detection"):
     # Compute regions properties
+    if show_image is None :
+        show_image = image
+
     regions, props = region_properties(label_image, image, min_area=min_area,
                                        properties=['extent', 'max_intensity', 'area', "mean_intensity", "bbox"])
 
@@ -447,7 +452,7 @@ def demo_regions(image, label_image, min_area=4, title="Demo of region detection
 
     def draw_rectangles(properties, picked_region=None):
         axs[0].clear()
-        axs[0].imshow(image, cmap='gnuplot2')
+        axs[0].imshow(show_image, cmap='gnuplot2')
         print(picked_region)
         if picked_region is not None:
             picked_minr = picked_region['bbox-0'].values
@@ -465,10 +470,10 @@ def demo_regions(image, label_image, min_area=4, title="Demo of region detection
 
             if picked_region is not None and picked_bbox == bbox:
                 rect = mpatches.Rectangle((minc, minr), maxc - minc, maxr - minr,
-                                          fill=False, edgecolor='red', linewidth=2)
+                                          fill=False, edgecolor='red', linewidth=2, picker=True)
             else:
                 rect = mpatches.Rectangle((minc, minr), maxc - minc, maxr - minr,
-                                          fill=False, edgecolor='blue', linewidth=2)
+                                          fill=False, edgecolor='blue', linewidth=2, picker=True)
             axs[0].add_patch(rect)
 
     draw_rectangles(props)
@@ -476,7 +481,7 @@ def demo_regions(image, label_image, min_area=4, title="Demo of region detection
     print(props.shape)
     print(props.head())
 
-    points = axs[1].scatter(x=props['area'], y=props["mean_intensity"], facecolors=["C0"] * len(props),
+    points = axs[1].scatter(x=props['max_intensity'], y=props["mean_intensity"], facecolors=["C0"] * len(props),
                             edgecolors=["C0"] * len(props), picker=True)
     fc = points.get_facecolors()
 
@@ -494,9 +499,18 @@ def demo_regions(image, label_image, min_area=4, title="Demo of region detection
 
     def onpick(event):
         print("Fire")
-        ind = event.ind
-        if len(ind) > 1:
-            ind = [ind[0]]
+        try :
+            ind = event.ind
+            if len(ind) > 1:
+                ind = [ind[0]]
+        except :
+            if isinstance(event.artist, mpatches.Rectangle):
+                minc, minr = event.artist.get_xy()
+                ind = props.loc[props['bbox-0']==minr].loc[props['bbox-1']==minc].index
+                if len(ind)>1 :
+                    print("warning {} values in ind while clicking on rectangles".format(len(ind)))
+
+
         change_point_color(ind)
         region_props_picked = props.iloc[ind]
         draw_rectangles(props, region_props_picked)
@@ -563,6 +577,7 @@ def label_filter(image, filter=None, window_size=5, k=0.2):
 
     # label image regions
     label_image = label(bw)
+    #TODO : to delete
     image_label_overlay = label2rgb(label_image, image=image)
 
     return label_image, image_label_overlay, binary
@@ -724,13 +739,16 @@ def overlaped_regions(im1, regions1, prev_im, prev_regions, threshold=100):
             matching_fail += 1
     print("Amount of overlaped regions :" + str(len(centroids)))
     print("Amount of regions mapped : " + str(len(existing_regions_map)))
-    print("Matching fails ratio :" + str(round(matching_fail / len(centroids) * 100)) + "%")
+    if len(centroids)>0:
+        print("Matching fails ratio :" + str(round(matching_fail / len(centroids) * 100)) + "%")
     return existing_regions_map, new_regions_matched_ids
 
 
 # ________________________________________________
 #              CLASSIFICATION
 # ________________________________________________
+
+
 def kmeans_classification(features, n_clusters=2, tol=1e-5):
     k_means = KMeans(n_clusters=n_clusters, n_init=1000, max_iter=10000)
     k_means.fit(features)
@@ -742,6 +760,7 @@ def kmeans_classification(features, n_clusters=2, tol=1e-5):
 
 
 def plot_result_classif(regions, properties, labels, image):
+    # TODO intégrer cette visulisation dans la Demo Region
     fig, axs = plt.subplots(ncols=2, figsize=(10, 6))
     # axs[0].imshow(image, cmap='gray')
     axs[0].imshow(image, cmap='gnuplot2')
@@ -767,42 +786,73 @@ def plot_result_classif(regions, properties, labels, image):
 
 
 if __name__ == '__main__':
-    file_path = os.path.join(DATA_PATH, FILE_NAME)
-    tiff = io.imread(file_path)
-    ch = tiff[:, :, :, 2]
-    img = ch[10]
+    #file_path = os.path.join(DATA_PATH, FILE_NAME)
+    #tiff = io.imread(file_path)
+    tiff = fm.get_tiff_file(11)
+    ch3 = tiff[:, :, :, 2][16]
+    ch1 = tiff[:, :, :, 0][16]
 
-    label_img = label_filter(img, filter=0.10)[0]
+    label_img = label_filter(ch1, filter=100)[0]
+    regions, properties = region_properties(label_img,ch1)
 
-    demo_regions(img, label_img, min_area=500, title="Choudamdoum")
-    plt.show()
+    r=regions[45]
+
+    coords = []
+    for region in regions :
+        for pixel in region.coords :
+            if len(coords)==0:
+                coords = [pixel]
+            else :
+                coords = np.append(coords, [pixel] , axis = 0)
+
+
+    coords = np.array([[coord[0], coord[1]] for coord in coords])
+
+    coord = np.array([[coord[0], coord[1]] for coord in r.coords])
+
+    coord = np.append(coord, [[32, 1050]], axis = 0)
+    print(coords[:,0])
+    for x in coord :
+        test = np.all(coords == x, axis=1)
+        test_2= np.argwhere(test)
+        test_3 = np.argwhere(np.logical_and(coords[:, 0] == x[0], coords[:, 1] == x[1]))
+        print(test)
+        print(test_2)
+        print(test_3)
+        print("-"*15)
+
+    test = [np.all(coords == x, axis=1) for x in coord]
+    #TODO:
+    # Ajouter un % d'inclusion dans une région.
+    # Utiliser enumerate pour identifier la region ( cellule ) dans laquelle se situe la mollecule
+    # Labelliser les regions (molecules) en fonction du fait qu'elles soient dans une autre région (cellule)
+    # ajouter cette labellisation aux features des régions3D
+
+    print(test)
+    #df_coords = pd.DataFrame(coord, columns=["coord"])
+    #mask = df_coords.isin({'coord': coords})
+
+    #demo_regions(ch3, label_img, min_area=2)
+    #plt.show()
+
+    """features = fm.get_test_features()
+    features = features.drop(["centroid_3D"], axis = 1)
+    kmeans, labels = kmeans_classification(features)
+    labels.to_csv("Labels_cells.csv", index=False)
+    result = pd.concat([features, labels], axis=1)
+    result.to_csv("Features_&_Labels_cells.csv", index=False)"""
+
+    """
+    df = pd.read_csv("Features_&_Labels_cells.csv")
+    df = df.drop(['min_intensity', '0', 'id ','extent'], axis = 1)
+    #df.plot.density()
+    for col in df.columns:
+        s = df[col]
+        s.plot.density()
+        plt.show()
     """
 
-    X_t = np.random.rand(10, 4) * 20
-
-    fig, ax1 = plt.subplots()
-
-    points = ax1.scatter(X_t[:, 0], X_t[:, 1],
-                         facecolors=["C0"] * len(X_t), edgecolors=["C0"] * len(X_t), picker=True)
-    fc = points.get_facecolors()
-    print(points)
-
-    def plot_curves(indexes):
-        for i in indexes:  # might be more than one point if ambiguous click
-            new_fc = fc.copy()
-            new_fc[i, :] = (1, 0, 0, 1)
-            points.set_facecolors(new_fc)
-            points.set_edgecolors(new_fc)
-        fig.canvas.draw_idle()
 
 
-    def onpick(event):
-        ind = event.ind
-        data = points.get_cursor_data(event)
-        print(data)
-        plot_curves(list(ind))
 
 
-    fig.canvas.mpl_connect('pick_event', onpick)
-    plt.show()
-    """
