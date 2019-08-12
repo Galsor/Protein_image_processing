@@ -196,12 +196,6 @@ def add_img(image, axs, cmap='gnuplot2', col=0, row=None, title="Undefined"):
 #               PATTERN DETECTION
 # ________________________________________________
 
-def simple_filter(image):
-    np.place(image, image < 100, 0)
-    from skimage.measure import regionprops
-    props = regionprops(image)
-    print(props)
-
 
 def local_maximas(img, h=None):
     if h:
@@ -218,14 +212,14 @@ def local_maximas(img, h=None):
     overlay = color.label2rgb(label_maxima, img, alpha=0.7, bg_label=0,
                               bg_color=None, colors=[(1, 0, 0)])
     row, col = add_img(overlay, axs, col=col, row=row, title="local maximas")
-    print("# of regions : " + str(len(regionprops(label_maxima))))
+    logging.info("# of regions : " + str(len(regionprops(label_maxima))))
     if h:
         h_maxima = extrema.h_maxima(img, h)
         label_h_maxima = label(h_maxima)
         overlay_h = color.label2rgb(label_h_maxima, img, alpha=0.7, bg_label=0,
                                     bg_color=None, colors=[(1, 0, 0)])
         row, col = add_img(overlay_h, axs, col=col, row=row, title="local maximas thresholded")
-        print("# of regions after thresholding : " + str(len(regionprops(label_h_maxima))))
+        logging.info("# of regions after thresholding : " + str(len(regionprops(label_h_maxima))))
     return img, label_maxima, label_h_maxima
 
 
@@ -434,8 +428,8 @@ def region_properties(label_image, image=None, min_area=1, properties=None, sepa
                     modified_prop = separator.join(map(str, (prop,) + ind))
                     r_properties[modified_prop] = np.copy(column_buffer)
         except Exception as err:
-            print("Error with : " + prop)
-            print(repr(err))
+            logging.debug("Error with : " + prop)
+            logging.debug(repr(err))
     r_properties = pd.DataFrame(r_properties)
     return regions, r_properties
 
@@ -453,14 +447,14 @@ def demo_regions(image, label_image, show_image = None, min_area=4, title="Demo 
     def draw_rectangles(properties, picked_region=None):
         axs[0].clear()
         axs[0].imshow(show_image, cmap='gnuplot2')
-        print(picked_region)
+        logging.debug(picked_region)
         if picked_region is not None:
             picked_minr = picked_region['bbox-0'].values
             picked_minc = picked_region['bbox-1'].values
             picked_maxr = picked_region['bbox-2'].values
             picked_maxc = picked_region['bbox-3'].values
             picked_bbox = [picked_minr, picked_minc, picked_maxr, picked_maxc]
-            print(picked_bbox)
+            logging.debug(picked_bbox)
         for index, row in properties.iterrows():  # draw rectangle around segmented coins
             minr = properties['bbox-0'].iloc[index]
             minc = properties['bbox-1'].iloc[index]
@@ -478,8 +472,8 @@ def demo_regions(image, label_image, show_image = None, min_area=4, title="Demo 
 
     draw_rectangles(props)
 
-    print(props.shape)
-    print(props.head())
+    logging.debug(props.shape)
+    logging.debug(props.head())
 
     points = axs[1].scatter(x=props['max_intensity'], y=props["mean_intensity"], facecolors=["C0"] * len(props),
                             edgecolors=["C0"] * len(props), picker=True)
@@ -498,7 +492,7 @@ def demo_regions(image, label_image, show_image = None, min_area=4, title="Demo 
     fig.suptitle(title, fontsize=14, fontweight='bold')
 
     def onpick(event):
-        print("Fire")
+        logging.debug("Fire")
         try :
             ind = event.ind
             if len(ind) > 1:
@@ -508,7 +502,7 @@ def demo_regions(image, label_image, show_image = None, min_area=4, title="Demo 
                 minc, minr = event.artist.get_xy()
                 ind = props.loc[props['bbox-0']==minr].loc[props['bbox-1']==minc].index
                 if len(ind)>1 :
-                    print("warning {} values in ind while clicking on rectangles".format(len(ind)))
+                    logging.warning("warning {} values in ind while clicking on rectangles".format(len(ind)))
 
 
         change_point_color(ind)
@@ -568,8 +562,8 @@ def label_filter(image, filter=None, window_size=5, k=0.2):
     elif filter == "sauvola":
         thresh = threshold_sauvola(image, window_size=window_size)
         # raise "Not implemented yet"
-    print("Threshold : ")
-    print(thresh)
+    logging.info("Threshold : ")
+    logging.info(thresh)
 
     binary = image > thresh
 
@@ -642,8 +636,8 @@ def fundamental_matrix_estimation(im1, im2):
     inlier_keypoints_1 = keypoints_1[matches[inliers, 0]]
     inlier_keypoints_2 = keypoints_2[matches[inliers, 1]]
 
-    print("Number of matches:", matches.shape[0])
-    print("Number of inliers:", inliers.sum())
+    logging.info("Number of matches:", matches.shape[0])
+    logging.info("Number of inliers:", inliers.sum())
 
     # Compare estimated sparse disparities to the dense ground-truth disparities.
 
@@ -728,19 +722,19 @@ def overlaped_regions(im1, regions1, prev_im, prev_regions, threshold=100):
 
     existing_regions_map = {}
     new_regions_matched_ids = []
-    print("start mapping")
+    logging.info("start mapping")
     matching_fail = 0
     for centroid in centroids:
         try:
             existing_regions_map[prev_regions_table[centroid]] = regions1[regions1_table[centroid]]
             new_regions_matched_ids.append(regions1_table[centroid])
         except Exception as e:
-            print(repr(e))
+            logging.debug("Centroid unmatched {}".format(centroid))
             matching_fail += 1
-    print("Amount of overlaped regions :" + str(len(centroids)))
-    print("Amount of regions mapped : " + str(len(existing_regions_map)))
+    logging.info("Amount of overlaped regions :" + str(len(centroids)))
+    logging.info("Amount of regions mapped : " + str(len(existing_regions_map)))
     if len(centroids)>0:
-        print("Matching fails ratio :" + str(round(matching_fail / len(centroids) * 100)) + "%")
+        logging.info("Matching fails ratio :" + str(round(matching_fail / len(centroids) * 100)) + "%")
     return existing_regions_map, new_regions_matched_ids
 
 
@@ -753,7 +747,7 @@ def kmeans_classification(features, n_clusters=2, tol=1e-5):
     k_means = KMeans(n_clusters=n_clusters, n_init=1000, max_iter=10000)
     k_means.fit(features)
     labels = pd.Series(k_means.labels_)
-    # print(labels.to_string())
+    # logging.debug(labels.to_string())
     # TS = labels.where(labels==1)
     # protein = labels.where(labels==0)
     return k_means, labels
