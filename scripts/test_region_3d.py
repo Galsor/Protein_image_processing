@@ -1,5 +1,5 @@
 from unittest import TestCase, main
-from scripts.Region3D import Region3D
+from scripts.region_3d import Region3D
 import numpy as np
 from skimage.measure import regionprops
 

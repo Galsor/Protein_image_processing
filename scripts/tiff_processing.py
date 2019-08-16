@@ -1,11 +1,12 @@
 import pandas as pd
+from math import sqrt
 from skimage import io, color, measure
 import matplotlib.pyplot as plt
 import numpy as np
-from scripts.Multi_slice_viewer import display_file, multi_slice_viewer, ax_config, process_key
+from scripts.multi_slice_viewer import MultiSliceViewer
 import os
 import sys
-import scripts.File_manager as fm
+import scripts.file_manager as fm
 import logging
 
 # ________________________________________________
@@ -29,9 +30,16 @@ from skimage.morphology import extrema
 from skimage.feature import match_descriptors, ORB, plot_matches
 from skimage.measure import ransac
 from skimage.transform import FundamentalMatrixTransform
+# ________________________________________________
 
-# Import for K-means clustering
-from sklearn.cluster import KMeans
+# Import for blob detection
+from skimage.feature import blob_log
+
+# Import for rescale intensity
+from skimage.exposure import rescale_intensity
+
+# Import for clustering
+from sklearn.cluster import KMeans, Birch
 
 """
 OBJ : Compter le nombre de TS et single mol par noyau
@@ -229,7 +237,33 @@ def local_maximas(img, h=None):
 
 # todo : try template matching https://scikit-image.org/docs/dev/auto_examples/features_detection/plot_template.html#sphx-glr-auto-examples-features-detection-plot-template-py
 
-# todo : [Top] Try blob detection : https://scikit-image.org/docs/dev/auto_examples/features_detection/plot_blob.html#sphx-glr-auto-examples-features-detection-plot-blob-py
+def blob_detection(img, log_scale=True):
+    blobs = blob_log(img, log_scale=log_scale)
+    return blobs
+
+def blob_region_properties(img, log_scale=True):
+    # TODO : récupérer les blobs et extraire pour chacun les region_properties
+    pass
+
+def demo_blobs(img):
+    rscl_intensity(img)
+    blobs = blob_detection(img)
+    # Compute radii in the 3rd column.
+    blobs[:, 2] = blobs[:, 2] * sqrt(2)
+
+    fig, ax = plt.subplots(1, 1, figsize=(9, 3))
+
+    ax.set_title("{} Blobs detected".format(len(blobs)))
+    ax.imshow(img)
+    for blob in blobs:
+        y, x, r = blob
+        c = plt.Circle((x, y), r, color='blue', linewidth=2, fill=False)
+        ax.add_patch(c)
+    ax.set_axis_off()
+
+    plt.tight_layout()
+    plt.show()
+
 
 # todo : Try ridges operator to enhance edges : https://scikit-image.org/docs/dev/auto_examples/edges/plot_ridge_filter.html#sphx-glr-auto-examples-edges-plot-ridge-filter-py
 
@@ -431,7 +465,7 @@ def region_properties(label_image, image=None, min_area=1, properties=None, sepa
             logging.debug("Error with : " + prop)
             logging.debug(repr(err))
     r_properties = pd.DataFrame(r_properties)
-    return regions, r_properties
+    return r_properties
 
 
 def demo_regions(image, label_image, show_image = None, min_area=4, title="Demo of region detection"):
@@ -514,6 +548,20 @@ def demo_regions(image, label_image, show_image = None, min_area=4, title="Demo 
     plt.tight_layout()
 
     return regions, props
+
+# ________________________________________________
+#               IMAGE PREPROCESSING
+# ________________________________________________
+
+def rscl_intensity(img, low_perc = 1, high_perc = 99):
+    p_start, p_end = np.percentile(img, (low_perc, high_perc))
+    if len(img.shape) == 3:
+        rscl_img = np.array([rescale_intensity(im, in_range=(p_start, p_end))for im in img])
+    elif len(img.shape) == 2:
+        rscl_img = rescale_intensity(img, in_range=(p_start, p_end))
+    else:
+        raise Exception("Some problem occures while processing rscl_intensity. Please check the dimension of img used")
+    return rscl_img
 
 
 def label_filter(image, filter=None, window_size=5, k=0.2):
@@ -663,12 +711,12 @@ def fundamental_matrix_estimation(im1, im2):
 
 
 # todo : integrate the function in 3D layers analyzer
-def overlaped_regions(im1, regions1, prev_im, prev_regions, threshold=100):
+def overlaped_regions(im1, df_region1, prev_im, prev_regions, threshold=100):
     """
     Identify overlaped regions between two images. Return a list of tuple containing (region from img 1, region from img 2)
     :param im1: (N, M) ndarray
         First image to compare
-    :param regions1: list<RegionProperties>
+    :param df_region1: list<RegionProperties>
         RegionProperties extracted from im1
     :param prev_im: (N, M) ndarray
         previous image to compare with
@@ -685,8 +733,11 @@ def overlaped_regions(im1, regions1, prev_im, prev_regions, threshold=100):
 
     if isinstance(prev_regions, dict):
         prev_regions_dict = prev_regions
-        prev_regions = prev_regions.items()
-    elif not isinstance(prev_regions, list):
+    elif isinstance(prev_regions, list):
+        prev_regions_dict = {key: value for key, value in enumerate(prev_regions)}
+    elif isinstance(prev_regions,pd.DataFrame):
+        prev_regions_dict = {key: value for key, value in prev_regions.iterrows()}
+    else:
         raise TypeError("Wrong type of values for regions2")
 
     # Compute difference between the two images
@@ -694,8 +745,8 @@ def overlaped_regions(im1, regions1, prev_im, prev_regions, threshold=100):
     bin2 = prev_im > threshold
     overlap_bin = np.logical_and(bin1, bin2)
     label_overlap_image = label(overlap_bin)
-    overlap_regions, df_overlap_prop = region_properties(label_overlap_image)
-    centroids = [list(region.centroid) for region in overlap_regions]
+    df_overlap_prop = region_properties(label_overlap_image, properties=['centroid','coordinates'])
+    centroids = [(region['centroid-0'], region['centroid-1']) for i, region in df_overlap_prop.iterrows()]
     centroids = [(round(centroid[0]).astype('Int64'), round(centroid[1]).astype('Int64')) for centroid in centroids]
 
     def build_regions_table(regions):
@@ -704,8 +755,8 @@ def overlaped_regions(im1, regions1, prev_im, prev_regions, threshold=100):
         :param regions: List of regions
         :return: region_table: Dictionnary
         """
-        if isinstance(regions, list):
-            regions = enumerate(regions)
+        if isinstance(regions, pd.DataFrame):
+            regions = regions.iterrows()
         elif isinstance(regions, dict):
             regions = regions.items()
         else:
@@ -713,11 +764,11 @@ def overlaped_regions(im1, regions1, prev_im, prev_regions, threshold=100):
 
         regions_table = {}
         for idx, region in regions:
-            for coord in region.coords:
+            for coord in region['coords']:
                 regions_table[(coord[0], coord[1])] = idx
         return regions_table
 
-    regions1_table = build_regions_table(regions1)
+    regions1_table = build_regions_table(df_region1)
     prev_regions_table = build_regions_table(prev_regions_dict)
 
     existing_regions_map = {}
@@ -726,7 +777,7 @@ def overlaped_regions(im1, regions1, prev_im, prev_regions, threshold=100):
     matching_fail = 0
     for centroid in centroids:
         try:
-            existing_regions_map[prev_regions_table[centroid]] = regions1[regions1_table[centroid]]
+            existing_regions_map[prev_regions_table[centroid]] = df_region1.loc[regions1_table[centroid]]
             new_regions_matched_ids.append(regions1_table[centroid])
         except Exception as e:
             logging.debug("Centroid unmatched {}".format(centroid))
@@ -743,14 +794,20 @@ def overlaped_regions(im1, regions1, prev_im, prev_regions, threshold=100):
 # ________________________________________________
 
 
-def kmeans_classification(features, n_clusters=2, tol=1e-5):
+def kmeans_classification(features, n_clusters=2):
     k_means = KMeans(n_clusters=n_clusters, n_init=1000, max_iter=10000)
     k_means.fit(features)
-    labels = pd.Series(k_means.labels_)
+    labels = pd.Series(k_means.labels_, name="KMeans")
     # logging.debug(labels.to_string())
     # TS = labels.where(labels==1)
     # protein = labels.where(labels==0)
     return k_means, labels
+
+def birch_classification(features, n_clusters=2):
+    birch = (Birch(n_clusters=2), "Birch")
+    birch.fit(features)
+    labels = pd.Series(birch.labels_, name="Birch")
+    return birch, labels
 
 
 def plot_result_classif(regions, properties, labels, image):
@@ -782,10 +839,19 @@ def plot_result_classif(regions, properties, labels, image):
 if __name__ == '__main__':
     #file_path = os.path.join(DATA_PATH, FILE_NAME)
     #tiff = io.imread(file_path)
+
     tiff = fm.get_tiff_file(11)
     ch3 = tiff[:, :, :, 2][16]
-    ch1 = tiff[:, :, :, 0][16]
+    ch1 = tiff[:, :, :, 0]
 
+
+    rscl_img = rscl_intensity(ch1)
+    viewer = MultiSliceViewer(rscl_img)
+    all_blobs = np.array([blob_detection(img) for img in rscl_img])
+    viewer.plot_imgs(blobs=all_blobs)
+    plt.show()
+
+    """
     label_img = label_filter(ch1, filter=100)[0]
     regions, properties = region_properties(label_img,ch1)
 
@@ -828,6 +894,7 @@ if __name__ == '__main__':
 
     #demo_regions(ch3, label_img, min_area=2)
     #plt.show()
+    """
 
     """features = fm.get_test_features()
     features = features.drop(["centroid_3D"], axis = 1)
