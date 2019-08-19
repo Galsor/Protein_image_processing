@@ -41,6 +41,8 @@ from skimage.exposure import rescale_intensity
 # Import for clustering
 from sklearn.cluster import KMeans, Birch
 
+from scripts.performance_monitoring import PerfLogger
+
 """
 OBJ : Compter le nombre de TS et single mol par noyau
 Règle : Max 2 TS par noyau
@@ -156,7 +158,14 @@ def spectrum_viewer(im):
 def plot_img(image, cmap='gnuplot2', title="Undefined title"):
     fig, ax = plt.subplots(ncols=1, nrows=1, figsize=(10, 4))
     fig.suptitle(title)
-    ax.imshow(image, cmap=cmap)
+
+    if isinstance(image[0,0], bool):
+        #for binarys ploting
+        ax.imshow(image, cmap='Greys',  interpolation='nearest')
+    else :
+        ax.imshow(image, cmap=cmap)
+
+
 
 
 def add_img(image, axs, cmap='gnuplot2', col=0, row=None, title="Undefined"):
@@ -203,6 +212,13 @@ def add_img(image, axs, cmap='gnuplot2', col=0, row=None, title="Undefined"):
 # ________________________________________________
 #               PATTERN DETECTION
 # ________________________________________________
+# todo : Try ridges operator to enhance edges : https://scikit-image.org/docs/dev/auto_examples/edges/plot_ridge_filter.html#sphx-glr-auto-examples-edges-plot-ridge-filter-py
+
+# todo : try hysteris detection : https://scikit-image.org/docs/dev/auto_examples/filters/plot_hysteresis.html#sphx-glr-auto-examples-filters-plot-hysteresis-py
+
+# todo : Try entropy to enhace edges and facilitate detection https://scikit-image.org/docs/dev/auto_examples/filters/plot_entropy.html#sphx-glr-auto-examples-filters-plot-entropy-py
+
+# todo : try template matching https://scikit-image.org/docs/dev/auto_examples/features_detection/plot_template.html#sphx-glr-auto-examples-features-detection-plot-template-py
 
 
 def local_maximas(img, h=None):
@@ -230,20 +246,14 @@ def local_maximas(img, h=None):
         logging.info("# of regions after thresholding : " + str(len(regionprops(label_h_maxima))))
     return img, label_maxima, label_h_maxima
 
+# ________________________________________________
+# BLOBS DETECTION
 
-# todo : try hysteris detection : https://scikit-image.org/docs/dev/auto_examples/filters/plot_hysteresis.html#sphx-glr-auto-examples-filters-plot-hysteresis-py
-
-# todo : Try entropy to enhace edges and facilitate detection https://scikit-image.org/docs/dev/auto_examples/filters/plot_entropy.html#sphx-glr-auto-examples-filters-plot-entropy-py
-
-# todo : try template matching https://scikit-image.org/docs/dev/auto_examples/features_detection/plot_template.html#sphx-glr-auto-examples-features-detection-plot-template-py
 
 def blob_detection(img, log_scale=True):
     blobs = blob_log(img, log_scale=log_scale)
     return blobs
 
-def blob_region_properties(img, log_scale=True):
-    # TODO : récupérer les blobs et extraire pour chacun les region_properties
-    pass
 
 def demo_blobs(img):
     rscl_intensity(img)
@@ -265,7 +275,9 @@ def demo_blobs(img):
     plt.show()
 
 
-# todo : Try ridges operator to enhance edges : https://scikit-image.org/docs/dev/auto_examples/edges/plot_ridge_filter.html#sphx-glr-auto-examples-edges-plot-ridge-filter-py
+# ________________________________________________
+# REGIONS PROPERTIES
+
 
 COL_DTYPES = {
     'area': int,
@@ -425,8 +437,8 @@ def region_properties(label_image, image=None, min_area=1, properties=None, sepa
     else:
         try:
             regions = regionprops(label_image, image)
-        except BaseException as err:
-            raise repr(err)
+        except Exception as err:
+            raise err
 
     # Select only the regions up to the min area criteria
     regions = [region for region in regions if region.area > min_area]
@@ -564,6 +576,26 @@ def rscl_intensity(img, low_perc = 1, high_perc = 99):
     return rscl_img
 
 
+def define_filter_value(image, filter, window_size=5, k=0.2):
+    if not filter:
+        thresh = 100
+    elif isinstance(filter, int):
+        thresh = filter
+    elif filter < 1 and filter > 0:
+        max = np.amax(image)
+        min = np.amin(image)
+        intensity_band = max - min
+        thresh = intensity_band * filter
+    elif filter == "otsu":
+        thresh = threshold_otsu(image)
+    elif filter == "niblack":
+        thresh = threshold_niblack(image, window_size=window_size, k=k)
+    elif filter == "sauvola":
+        thresh = threshold_sauvola(image, window_size=window_size)
+
+    return thresh
+
+
 def label_filter(image, filter=None, window_size=5, k=0.2):
     """ Apply intensity filter
 
@@ -591,38 +623,22 @@ def label_filter(image, filter=None, window_size=5, k=0.2):
             The overlay of the original image with the label_image
     """
 
-    # Apply filter
+    # compute filter value
+    thresh = define_filter_value(image, filter, window_size, k)
 
-    if not filter:
-        thresh = 100
-    elif isinstance(filter, int):
-        thresh = filter
-    elif filter < 1 and filter > 0:
-        max = np.amax(image)
-        min = np.amin(image)
-        intensity_band = max - min
-        thresh = intensity_band * filter
-    elif filter == "otsu":
-        thresh = threshold_otsu(image)
-    elif filter == "niblack":
-        thresh = threshold_niblack(image, window_size=window_size, k=k)
-        # raise "Not implemented yet"
-    elif filter == "sauvola":
-        thresh = threshold_sauvola(image, window_size=window_size)
-        # raise "Not implemented yet"
     logging.info("Threshold : ")
     logging.info(thresh)
 
+    # apply filter
     binary = image > thresh
 
+    # close blanks
     bw = closing(binary, square(2))
 
     # label image regions
     label_image = label(bw)
-    #TODO : to delete
-    image_label_overlay = label2rgb(label_image, image=image)
 
-    return label_image, image_label_overlay, binary
+    return label_image, binary
 
 
 def demo_label_filter(image):
@@ -640,6 +656,40 @@ def demo_label_filter(image):
 
     plt.tight_layout()
     plt.show()
+
+
+def label_blob(img, blobs, filter=None, window_size=5, k=0.2):
+
+    #Apply threshold
+    thresh = define_filter_value(img, filter, window_size, k)
+    bin = img > thresh
+
+
+    blob_bin = np.zeros(img.shape)
+
+    try:
+        for blob in blobs:
+            # find coordinates of the region with respect of the image edges
+            min_row = int(blob[0] - blob[2]) if (int(blob[0] - blob[2]) > 0) else 0
+            max_row = int(blob[0] + blob[2]) if (int(blob[0] + blob[2]) < len(img)) else len(img) - 1
+            min_col = int(blob[1] - blob[2]) if (int(blob[1] - blob[2]) > 0) else 0
+            max_col = int(blob[1] + blob[2]) if (int(blob[1] + blob[2]) < len(img)) else len(img) - 1
+
+            # Select the label_image slice corresponding to the blob and add it
+            # This phase remove labeled regions
+            blob_bin[min_row:max_row, min_col:max_col] = bin[min_row:max_row, min_col:max_col]
+
+    except Exception as e:
+        logging.error("error in square building")
+        raise e
+
+    # close blanks
+    bw = closing(blob_bin, square(2))
+
+    # label image regions
+    label_image = label(bw)
+
+    return label_image, blob_bin
 
 
 # Unused yet
@@ -710,8 +760,7 @@ def fundamental_matrix_estimation(im1, im2):
     ax[1].set_title("Histogram of disparity errors")
 
 
-# todo : integrate the function in 3D layers analyzer
-def overlaped_regions(im1, df_region1, prev_im, prev_regions, threshold=100):
+def overlaped_regions(im1, df_region1, prev_im, prev_regions, filter=0.1):
     """
     Identify overlaped regions between two images. Return a list of tuple containing (region from img 1, region from img 2)
     :param im1: (N, M) ndarray
@@ -722,7 +771,7 @@ def overlaped_regions(im1, df_region1, prev_im, prev_regions, threshold=100):
         previous image to compare with
     :param prev_regions: list<RegionProperties>
         RegionProperties extracted from previous image
-    :param threshold: float, int
+    :param filter: float, int
         Value of threshold used to generate binary image to compare
         Default : 100
     :return: region_couples : dict<(int, RegionProperties)>
@@ -732,22 +781,22 @@ def overlaped_regions(im1, df_region1, prev_im, prev_regions, threshold=100):
     """
 
     if isinstance(prev_regions, dict):
-        prev_regions_dict = prev_regions
+        prev_regions = prev_regions
     elif isinstance(prev_regions, list):
-        prev_regions_dict = {key: value for key, value in enumerate(prev_regions)}
+        prev_regions = {key: value for key, value in enumerate(prev_regions)}
     elif isinstance(prev_regions,pd.DataFrame):
-        prev_regions_dict = {key: value for key, value in prev_regions.iterrows()}
+        prev_regions = {key: value for key, value in prev_regions.iterrows()}
     else:
         raise TypeError("Wrong type of values for regions2")
 
     # Compute difference between the two images
-    bin1 = im1 > threshold
-    bin2 = prev_im > threshold
+    bin1 = label_filter(im1, filter)[1]
+    bin2 = label_filter(prev_im, filter)[1]
     overlap_bin = np.logical_and(bin1, bin2)
+
     label_overlap_image = label(overlap_bin)
-    df_overlap_prop = region_properties(label_overlap_image, properties=['centroid','coordinates'])
+    df_overlap_prop = region_properties(label_overlap_image, properties=['centroid'])
     centroids = [(region['centroid-0'], region['centroid-1']) for i, region in df_overlap_prop.iterrows()]
-    centroids = [(round(centroid[0]).astype('Int64'), round(centroid[1]).astype('Int64')) for centroid in centroids]
 
     def build_regions_table(regions):
         """
@@ -769,7 +818,7 @@ def overlaped_regions(im1, df_region1, prev_im, prev_regions, threshold=100):
         return regions_table
 
     regions1_table = build_regions_table(df_region1)
-    prev_regions_table = build_regions_table(prev_regions_dict)
+    prev_regions_table = build_regions_table(prev_regions)
 
     existing_regions_map = {}
     new_regions_matched_ids = []
@@ -777,9 +826,9 @@ def overlaped_regions(im1, df_region1, prev_im, prev_regions, threshold=100):
     matching_fail = 0
     for centroid in centroids:
         try:
-            existing_regions_map[prev_regions_table[centroid]] = df_region1.loc[regions1_table[centroid]]
+            existing_regions_map[prev_regions_table[centroid]] = df_region1.iloc[regions1_table[centroid]]
             new_regions_matched_ids.append(regions1_table[centroid])
-        except Exception as e:
+        except KeyError as e:
             logging.debug("Centroid unmatched {}".format(centroid))
             matching_fail += 1
     logging.info("Amount of overlaped regions :" + str(len(centroids)))
@@ -840,16 +889,11 @@ if __name__ == '__main__':
     #file_path = os.path.join(DATA_PATH, FILE_NAME)
     #tiff = io.imread(file_path)
 
-    tiff = fm.get_tiff_file(11)
-    ch3 = tiff[:, :, :, 2][16]
-    ch1 = tiff[:, :, :, 0]
-
-
-    rscl_img = rscl_intensity(ch1)
+    """rscl_img = rscl_intensity(ch1)
     viewer = MultiSliceViewer(rscl_img)
     all_blobs = np.array([blob_detection(img) for img in rscl_img])
     viewer.plot_imgs(blobs=all_blobs)
-    plt.show()
+    plt.show()"""
 
     """
     label_img = label_filter(ch1, filter=100)[0]

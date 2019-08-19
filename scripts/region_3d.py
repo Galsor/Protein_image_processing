@@ -1,6 +1,9 @@
 import logging
 
-from scripts.tiff_processing import region_properties, label_filter, overlaped_regions, kmeans_classification
+from math import sqrt
+
+from scripts.tiff_processing import region_properties, label_filter, overlaped_regions, kmeans_classification, \
+    rscl_intensity, blob_detection, label_blob
 import scripts.file_manager as fm
 
 from skimage import io
@@ -8,17 +11,17 @@ import numpy as np
 import pandas as pd
 
 PROPERTIES = ['area',
-    'centroid',
-    'coords',
-    'extent',
-    'label',
-    'local_centroid',
-    'max_intensity',
-    'mean_intensity',
-    'min_intensity',
-    'perimeter',
-    'intensity_image',
-    'solidity']
+              'centroid',
+              'coords',
+              'extent',
+              'label',
+              'local_centroid',
+              'max_intensity',
+              'mean_intensity',
+              'min_intensity',
+              'perimeter',
+              'intensity_image',
+              'solidity']
 
 
 class RegionFrame:
@@ -209,11 +212,11 @@ class Region3D:
         mean_intensity = self.get_mean_intensity()
         max_intensity = self.get_max_intensity()
         min_intensity = self.get_min_intensity()
-        x,y,z = self.get_centroid_3D()
+        x, y, z = self.get_centroid_3D()
         extent = self.get_extent()
 
         features = {"id": ids,
-                    "depth":depth,
+                    "depth": depth,
                     "area": areas,
                     "total_intensity": total_intensity,
                     "mean_intensity": mean_intensity,
@@ -231,7 +234,10 @@ class Region3D:
     # Eclater le centroid en 3 coordonnées
 
 
-def extract_regions(tiff, channel=0, min_area=2, filter=0.10):
+# ________________________________________________
+# REGIONS Extraction
+
+def extract_regions(tiff, channel=0, min_area=2, filter=0.10, mode='region'):
     if not isinstance(channel, int):
         raise TypeError("Wrong type for channel value")
 
@@ -239,15 +245,25 @@ def extract_regions(tiff, channel=0, min_area=2, filter=0.10):
         ch = tiff[:, :, :, channel]
     except Exception as e:
         raise e
+    if mode == 'blob':
+        if fm.exist("data_test_blob_detect.pkl"):
+            blobs, rscl_img = fm.load_pickle("data_test_blob_detect.pkl")
+        else:
+            blobs, rscl_img = prepare_blob_extraction(ch)
 
     init = True
     for layer, img in enumerate(ch):
         logging.info("_" * 80)
         logging.info("Layer {}".format(layer))
         logging.info("_" * 80)
-
-        df_properties = region_properties(label_filter(img, filter=filter)[0], img, properties=PROPERTIES,
-                                          min_area=min_area)
+        if mode == 'region':
+            df_properties = region_properties(label_filter(img, filter=filter)[0], img, properties=PROPERTIES,
+                                              min_area=min_area)
+        if mode == 'blob':
+            #img = rscl_img[layer]
+            layer_blobs = blobs[layer]
+            df_properties = region_properties(label_blob(img, layer_blobs, filter=filter)[0], img, properties=PROPERTIES,
+                                              min_area=min_area)
         # Previously test if 'regions' existing. Region has been replaced by df_properties
         if init:
             rf = RegionFrame(df_properties)
@@ -255,7 +271,8 @@ def extract_regions(tiff, channel=0, min_area=2, filter=0.10):
             prev_img = img
         elif not init:
             region_dict = rf.get_regions_in_last_layer()
-            matched_regions, new_regions_matched_ids = overlaped_regions(img, df_properties, prev_img, region_dict)
+            matched_regions, new_regions_matched_ids = overlaped_regions(img, df_properties, prev_img, region_dict,
+                                                                         filter=filter)
             existing_regions_map = rf.enrich_region3D(matched_regions)
             new_regions = [region for idx, region in df_properties.iterrows() if idx not in new_regions_matched_ids]
             new_regions_map = rf.populate_region3D(new_regions)
@@ -264,6 +281,22 @@ def extract_regions(tiff, channel=0, min_area=2, filter=0.10):
 
     logging.info("Total amount of regions detected {}".format(rf.get_amount_of_regions3D()))
     return rf
+
+
+def prepare_blob_extraction(tiff):
+    rscl_img = rscl_intensity(tiff)
+    logging.info("End rescaling")
+
+    blobs = [blob_detection(im, log_scale=True) for im in rscl_img]
+    logging.info("End blob detection")
+
+    # compute radii
+    for blobs_layer in blobs:
+        if len(blobs_layer) > 1:
+            blobs_layer[:, 2] = blobs_layer[:, 2] * sqrt(2)
+    logging.info("End compute blob radii")
+    fm.save_as_pickle([blobs, rscl_img], file_name="data_test_blob_detect")
+    return blobs, rscl_img
 
 
 def test_pipeline():
@@ -301,15 +334,15 @@ def extract_molecules(tiff, min_area=2):
 
 
 if __name__ == '__main__':
-    logging.basicConfig(level=logging.INFO)
+    """logging.basicConfig(level=logging.INFO)
     folder_path = "C:\\Users\\Antoine\\PycharmProjects\\Protein_image_processing\\data\\"
     file = "C10DsRedlessxYw_emb11_Center_Out.tif"
     file_path = folder_path + file
     tiff = fm.get_tiff_file(11)
-    # rf = extract_regions(file_path)
-    rf = extract_molecules(tiff)
-    features = rf.extract_features()
-    fm.save_results(features, "new_pipeline", timestamped=True)
+    rf = extract_regions(tiff, mode='blob')
+    features1 = rf.extract_features()
+    fm.save_results(features, "new_pipeline", timestamped=True)"""
+
 
 
 
