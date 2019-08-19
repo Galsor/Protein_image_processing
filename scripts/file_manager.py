@@ -41,14 +41,15 @@ def save_results(df, file_name=None, timestamped=False):
 
 
 def get_test_features(file_name="Features_cells_C10DsRedlessxYw_emb11_Center_Out.tif.csv"):
-    path = os.path.join(DATA_PATH, file_name)
-    df = pd.read_csv(path)
-    if 'centroid_3D' in df.columns:
-        # convert string into tuple
-        df['centroid_3D'] = df['centroid_3D'].map(literal_eval)
-        print(isinstance(df['centroid_3D'].iloc[0], tuple))
-    else:
-        print("No Centroid columns in DataFrame")
+    if file_name[:-4]!=".csv":
+        file_name+=".csv"
+
+    #path = os.path.join(DATA_PATH, file_name)
+    path = exist(file_name)
+    try:
+        df = pd.read_csv(path)
+    except:
+        raise ValueError(" '{}' couldn't be found in data directory".format(file_name))
     return df
 
 
@@ -64,8 +65,8 @@ def save_as_pickle(data, file_name=None, timestamped=False):
         with open(file_name, 'wb') as f:
             pickle.dump(data, f)
     except Exception as e:
-        logging.error("An error occured while saving {}".format(file_name))
-        logging.error(repr(e))
+        print("An error occured while saving {}".format(file_name))
+        print(repr(e))
 
 
 def load_pickle(file_name):
@@ -96,8 +97,9 @@ def exist(file_name):
         paths.append(DATA_PATH+"\\"+dir)
     for path in paths:
         if os.path.exists(path+"\\"+file_name) :
-            return True
+            return path+"\\"+file_name
     return False
+
 
 def get_data_subdirs():
     dirs = []
