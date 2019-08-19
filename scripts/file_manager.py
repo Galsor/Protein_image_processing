@@ -88,3 +88,20 @@ def format_file_name(file_name, directory, timestamped, extension):
     else:
         file_name = directory + file_name + extension
     return file_name
+
+
+def exist(file_name):
+    paths = [DATA_PATH]
+    for dir in get_data_subdirs():
+        paths.append(DATA_PATH+"\\"+dir)
+    for path in paths:
+        if os.path.exists(path+"\\"+file_name) :
+            return True
+    return False
+
+def get_data_subdirs():
+    dirs = []
+    for x in os.listdir(DATA_PATH):
+        if os.path.isdir(DATA_PATH+"\\"+x):
+            dirs.append(x)
+    return dirs
