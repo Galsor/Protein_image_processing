@@ -52,10 +52,6 @@ class MemoryMonitoring:
 
     def display_top(self, snapshot, key_type='lineno', limit=5):
         print ("snapshot printing strats")
-        snapshot = snapshot.filter_traces((
-            tracemalloc.Filter(False, "<frozen importlib._bootstrap>"),
-            tracemalloc.Filter(False, "<unknown>"),
-        ))
         top_stats = snapshot.statistics(key_type)
 
         print("Top %s lines" % limit)
@@ -101,3 +97,11 @@ class PerfLogger:
         self.timer.step()
         print(str(self.timer.last_step_duration()))
         self.mm.current_memory_state()
+        self.timer.step()
+
+    def end_step(self):
+        self.timer.step()
+        print(str(self.timer.last_step_duration()))
+        print("Total time spent : {}".format(self.timer.total_duration()))
+        self.mm.current_memory_state()
+
