@@ -24,6 +24,8 @@ class MultiSliceViewer():
                 self.imgs = np.array(tiff)
             elif len(tiff.shape) == 3:
                 self.imgs = tiff
+            elif len(tiff.shape) == 4:
+                self.imgs = tiff[:,:,:,channel]
             else :
                 raise Exception("Some error occures while checking tiff file length.")
 
@@ -42,7 +44,8 @@ class MultiSliceViewer():
         self.remove_keymap_conflicts({'j', 'k'})
         if blobs is not None :
             self.set_config(CONFIG[1])
-
+        else :
+            self.set_config(CONFIG[0])
         if self.config == 'standard':
             fig, ax = plt.subplots()
             self.ax_config(self.imgs, ax)
@@ -151,6 +154,7 @@ class MultiSliceViewer():
 
     def add_blobs_patches(self, ax):
         blb = self.blobs[ax.index]
+        #Compute radii instead of std
         blb[:, 2] = blb[:, 2] * sqrt(2)
         for blob in blb:
             y, x, r = blob
