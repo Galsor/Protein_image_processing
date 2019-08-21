@@ -1,5 +1,8 @@
+import time
+
 import pandas as pd
 from math import sqrt
+from scipy.signal import argrelextrema, hilbert, find_peaks
 from skimage import io, color, measure
 import matplotlib.pyplot as plt
 import numpy as np
@@ -8,7 +11,7 @@ import os
 import sys
 import scripts.file_manager as fm
 import logging
-
+import operator
 # ________________________________________________
 # Imports for label region
 import matplotlib.patches as mpatches
@@ -36,7 +39,7 @@ from skimage.transform import FundamentalMatrixTransform
 from skimage.feature import blob_log
 
 # Import for rescale intensity
-from skimage.exposure import rescale_intensity
+from skimage.exposure import rescale_intensity, histogram
 
 # Import for clustering
 from sklearn.cluster import KMeans, Birch
@@ -128,44 +131,15 @@ def convert_HED(im):
     return im_hed
 
 
-def spectrum_viewer(im):
-    red, green, blue = extract_channels(im)
-
-    im_hsv = convert_HSV(im)
-    hue, saturation, value = extract_channels(im_hsv)
-
-    im_hed = convert_HED(im)
-    haematoxylin, eosin, dab = extract_channels(im_hed)
-
-    ims = [red, green, blue, hue, saturation, value, haematoxylin, eosin, dab]
-    # shape = (9,) + im.shape
-    # ims = np.empty(shape)
-    # ims = ims red
-
-    fig, axes = plt.subplots(3, 3, figsize=(7, 6), sharex=True, sharey=True)
-    labels = ["red", "green", "blue", "Hematoxylin", "Eosin", "DAB", "Hue", "Saturation", "Value"]
-    ax = axes.ravel()
-
-    for i in np.arange(len(labels)):
-        ax_config(ims[i], ax[i])
-        ax[i].set_title(labels[i])
-
-    fig.canvas.mpl_connect('key_press_event', process_key)
-    fig.tight_layout()
-    plt.show()
-
-
 def plot_img(image, cmap='gnuplot2', title="Undefined title"):
     fig, ax = plt.subplots(ncols=1, nrows=1, figsize=(10, 4))
     fig.suptitle(title)
 
-    if isinstance(image[0,0], bool):
-        #for binarys ploting
-        ax.imshow(image, cmap='Greys',  interpolation='nearest')
-    else :
+    if isinstance(image[0, 0], bool):
+        # for binarys ploting
+        ax.imshow(image, cmap='Greys', interpolation='nearest')
+    else:
         ax.imshow(image, cmap=cmap)
-
-
 
 
 def add_img(image, axs, cmap='gnuplot2', col=0, row=None, title="Undefined"):
@@ -212,6 +186,125 @@ def add_img(image, axs, cmap='gnuplot2', col=0, row=None, title="Undefined"):
 # ________________________________________________
 #               PATTERN DETECTION
 # ________________________________________________
+
+def find_cells_contours(imgs, window=500, intensity_band=(400, 900), smooth=50, demo=False):
+    all_peaks = detect_intensity_peaks(imgs, window=window, intensity_band=intensity_band, smooth=smooth)
+
+    def compute_area(contour):
+        x = contour[:, 0]
+        y = contour[:, 1]
+        area = 0.5 * np.sum(y[:-1] * np.diff(x) - x[:-1] * np.diff(y))
+        area = np.abs(area)
+        return area
+
+    selected_img_idx = None
+    res = 0
+    a_c_max = 0
+    for i, img in enumerate(imgs):
+        if len(all_peaks[i]) == 0:
+            continue
+        logging.info(" ---- Image {} ----".format(i))
+        # find contours
+        contours = measure.find_contours(img, all_peaks[i][0], fully_connected='high', positive_orientation='high')
+        # select significant contours (length > 200)
+        contours = [c for c in contours if len(c) > 200]
+        # get length for each contours
+        contours_len = [len(c) for c in contours]
+
+        # compute area related to each contours
+        areas = []
+        for c in contours:
+            area = compute_area(c)
+            areas.append(area)
+
+        # compute area/contour ratio (total areas / total contours)
+        # high value of ratio means that contours are nicely embedding the cell (close from ellipic form)
+        a_c_ratio = np.sum(areas) / np.sum(contours_len)
+
+        # Select only images where regions has reasonnable size
+        test = np.max(areas)
+        if np.max(areas) < 90000 and a_c_ratio > a_c_max:
+            a_c_max = a_c_ratio
+            res = contours
+            selected_img_idx = i
+    if demo:
+        return res, selected_img_idx
+    else:
+        return res
+
+
+def demo_find_cells_contours(tiff):
+    imgs = tiff[:, :, :, 2]
+
+    contours, i = find_cells_contours(imgs, demo=True)
+
+    fig, ax = plt.subplots(1, 2, figsize=(10, 6))
+    ax[0].imshow(imgs[i], cmap='gnuplot2')
+    ax[0].set_title("Image {} ".format(i))
+    for n, contour in enumerate(contours):
+        if len(contour) > 200:
+            ax[0].plot(contour[:, 1], contour[:, 0], linewidth=2)
+    hist, hist_centers = histogram(imgs[i])
+    ax[1].plot(hist_centers, hist, lw=2)
+    ax[1].set_title('histogram of gray values')
+
+
+def detect_intensity_peaks(tiff, window=500, intensity_band=(400, 900), smooth=50, demo=False):
+    try:
+        dim = len(tiff.shape)
+    except:
+        raise TypeError("Wrong type of image input for intensity peaks detection")
+
+    if dim == 4:
+        imgs = tiff[:, :, :, 2]
+    elif dim == 3:
+        imgs = tiff
+    elif dim == 2:
+        imgs = [tiff]
+    else:
+        raise ValueError("Image dimension is not bounded between 2 ('single image') and 4  ('all channel tiff file')")
+
+    if not isinstance(intensity_band, tuple) and not isinstance(intensity_band, int):
+        raise TypeError("Wrong type of input input for intensity band. Please use number  or tuple<int>")
+
+    def moving_average(a, n=3):
+        ret = np.cumsum(a, dtype=float)
+        ret[n:] = ret[n:] - ret[:-n]
+        return ret[n - 1:] / n
+
+    hists = []
+    all_peaks = []
+    for i, img in enumerate(imgs):
+        hist, hist_centers = histogram(img)
+        # smooth local variations
+        avg_hist = moving_average(hist, smooth)
+        peaks, _ = find_peaks(avg_hist, distance=window, height=intensity_band)
+        logging.info("img {} : {}".format(i, peaks))
+        hists.append(hist)
+        all_peaks.append(peaks)
+
+    # convert the list in numpy matrix
+    all_peaks = np.array(all_peaks)
+
+    if demo:
+        return imgs, hists, all_peaks
+    else:
+        return all_peaks
+
+
+def demo_detect_intensity_peaks(tiff):
+    fig, axs = plt.subplots(4, 10)
+    imgs, hist, peaks = detect_intensity_peaks(tiff, demo=True)
+    for i, img in enumerate(imgs):
+        p_row = int(i / 10)
+        p_col = int(i % 10)
+        ax = axs[p_row][p_col]
+        ax.set_axis_off()
+        ax.plot(hist[i], lw=2)
+        ax.plot(peaks[i], hist[i][peaks[i]], "x")
+        ax.set_title(i)
+
+
 # todo : Try ridges operator to enhance edges : https://scikit-image.org/docs/dev/auto_examples/edges/plot_ridge_filter.html#sphx-glr-auto-examples-edges-plot-ridge-filter-py
 
 # todo : try hysteris detection : https://scikit-image.org/docs/dev/auto_examples/filters/plot_hysteresis.html#sphx-glr-auto-examples-filters-plot-hysteresis-py
@@ -246,8 +339,24 @@ def local_maximas(img, h=None):
         logging.info("# of regions after thresholding : " + str(len(regionprops(label_h_maxima))))
     return img, label_maxima, label_h_maxima
 
+
 # ________________________________________________
 # BLOBS DETECTION
+
+def blob_extraction(tiff):
+    rscl_img = rscl_intensity(tiff)
+    logging.info("End rescaling")
+
+    blobs = [blob_detection(im, log_scale=True) for im in rscl_img]
+    logging.info("End blob detection")
+
+    # compute radii
+    for blobs_layer in blobs:
+        if len(blobs_layer) > 1:
+            blobs_layer[:, 2] = blobs_layer[:, 2] * sqrt(2)
+    logging.info("End compute blob radii")
+    fm.save_as_pickle([blobs, rscl_img], file_name="data_test_blob_detect")
+    return blobs, rscl_img
 
 
 def blob_detection(img, log_scale=True):
@@ -277,7 +386,6 @@ def demo_blobs(img):
 
 # ________________________________________________
 # REGIONS PROPERTIES
-
 
 COL_DTYPES = {
     'area': int,
@@ -480,13 +588,13 @@ def region_properties(label_image, image=None, min_area=1, properties=None, sepa
     return r_properties
 
 
-def demo_regions(image, label_image, show_image = None, min_area=4, title="Demo of region detection"):
+def demo_regions(image, label_image, show_image=None, min_area=4, title="Demo of region detection"):
     # Compute regions properties
-    if show_image is None :
+    if show_image is None:
         show_image = image
 
-    regions, props = region_properties(label_image, image, min_area=min_area,
-                                       properties=['extent', 'max_intensity', 'area', "mean_intensity", "bbox"])
+    props = region_properties(label_image, image=image, min_area=min_area,
+                              properties=['extent', 'max_intensity', 'area', "mean_intensity", "bbox"])
 
     fig, axs = plt.subplots(ncols=2, figsize=(10, 6))
 
@@ -539,17 +647,16 @@ def demo_regions(image, label_image, show_image = None, min_area=4, title="Demo 
 
     def onpick(event):
         logging.debug("Fire")
-        try :
+        try:
             ind = event.ind
             if len(ind) > 1:
                 ind = [ind[0]]
-        except :
+        except:
             if isinstance(event.artist, mpatches.Rectangle):
                 minc, minr = event.artist.get_xy()
-                ind = props.loc[props['bbox-0']==minr].loc[props['bbox-1']==minc].index
-                if len(ind)>1 :
+                ind = props.loc[props['bbox-0'] == minr].loc[props['bbox-1'] == minc].index
+                if len(ind) > 1:
                     logging.warning("warning {} values in ind while clicking on rectangles".format(len(ind)))
-
 
         change_point_color(ind)
         region_props_picked = props.iloc[ind]
@@ -559,16 +666,17 @@ def demo_regions(image, label_image, show_image = None, min_area=4, title="Demo 
 
     plt.tight_layout()
 
-    return regions, props
+    return props
+
 
 # ________________________________________________
 #               IMAGE PREPROCESSING
 # ________________________________________________
 
-def rscl_intensity(img, low_perc = 1, high_perc = 99):
+def rscl_intensity(img, low_perc=1, high_perc=99):
     p_start, p_end = np.percentile(img, (low_perc, high_perc))
     if len(img.shape) == 3:
-        rscl_img = np.array([rescale_intensity(im, in_range=(p_start, p_end))for im in img])
+        rscl_img = np.array([rescale_intensity(im, in_range=(p_start, p_end)) for im in img])
     elif len(img.shape) == 2:
         rscl_img = rescale_intensity(img, in_range=(p_start, p_end))
     else:
@@ -596,7 +704,7 @@ def define_filter_value(image, filter, window_size=5, k=0.2):
     return thresh
 
 
-def label_filter(image, filter=None, window_size=5, k=0.2):
+def label_filter(image, filter=None, window_size=5, k=0.2, close_square=2):
     """ Apply intensity filter
 
     :param image: (N, M) ndarray
@@ -624,16 +732,24 @@ def label_filter(image, filter=None, window_size=5, k=0.2):
     """
 
     # compute filter value
-    thresh = define_filter_value(image, filter, window_size, k)
+    if isinstance(filter, tuple):
+        thresh_min = define_filter_value(image, filter[0], window_size, k)
+        thresh_max = define_filter_value(image, filter[1], window_size, k)
+    else:
+        thresh_min = define_filter_value(image, filter, window_size, k)
+        thresh_max = None
 
     logging.info("Threshold : ")
-    logging.info(thresh)
+    logging.info(thresh_min)
 
     # apply filter
-    binary = image > thresh
+    if thresh_max is None:
+        binary = image > thresh_min
+    else:
+        binary = np.logical_and(image > thresh_min, image < thresh_max)
 
     # close blanks
-    bw = closing(binary, square(2))
+    bw = closing(binary, square(close_square))
 
     # label image regions
     label_image = label(bw)
@@ -659,11 +775,9 @@ def demo_label_filter(image):
 
 
 def label_blob(img, blobs, filter=None, window_size=5, k=0.2):
-
-    #Apply threshold
+    # Apply threshold
     thresh = define_filter_value(img, filter, window_size, k)
     bin = img > thresh
-
 
     blob_bin = np.zeros(img.shape)
 
@@ -784,7 +898,7 @@ def overlaped_regions(im1, df_region1, prev_im, prev_regions, filter=0.1):
         prev_regions = prev_regions
     elif isinstance(prev_regions, list):
         prev_regions = {key: value for key, value in enumerate(prev_regions)}
-    elif isinstance(prev_regions,pd.DataFrame):
+    elif isinstance(prev_regions, pd.DataFrame):
         prev_regions = {key: value for key, value in prev_regions.iterrows()}
     else:
         raise TypeError("Wrong type of values for regions2")
@@ -833,7 +947,7 @@ def overlaped_regions(im1, df_region1, prev_im, prev_regions, filter=0.1):
             matching_fail += 1
     logging.info("Amount of overlaped regions :" + str(len(centroids)))
     logging.info("Amount of regions mapped : " + str(len(existing_regions_map)))
-    if len(centroids)>0:
+    if len(centroids) > 0:
         logging.info("Matching fails ratio :" + str(round(matching_fail / len(centroids) * 100)) + "%")
     return existing_regions_map, new_regions_matched_ids
 
@@ -852,8 +966,9 @@ def kmeans_classification(features, n_clusters=2):
     # protein = labels.where(labels==0)
     return k_means, labels
 
+
 def birch_classification(features, n_clusters=2):
-    birch = (Birch(n_clusters=2), "Birch")
+    birch = Birch(n_clusters=n_clusters)
     birch.fit(features)
     labels = pd.Series(birch.labels_, name="Birch")
     return birch, labels
@@ -886,8 +1001,12 @@ def plot_result_classif(regions, properties, labels, image):
 
 
 if __name__ == '__main__':
-    #file_path = os.path.join(DATA_PATH, FILE_NAME)
-    #tiff = io.imread(file_path)
+    embryos = fm.get_embryos()
+    for emb in embryos:
+        tiff = fm.get_tiff_file(emb)
+        demo_find_cells_contours(tiff)
+    plt.show()
+
 
     """rscl_img = rscl_intensity(ch1)
     viewer = MultiSliceViewer(rscl_img)
@@ -956,8 +1075,3 @@ if __name__ == '__main__':
         s.plot.density()
         plt.show()
     """
-
-
-
-
-
