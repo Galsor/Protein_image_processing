@@ -6,6 +6,8 @@ from scipy.signal import argrelextrema, hilbert, find_peaks
 from skimage import io, color, measure
 import matplotlib.pyplot as plt
 import numpy as np
+from skimage.draw import polygon
+
 from scripts.multi_slice_viewer import MultiSliceViewer
 import os
 import sys
@@ -312,6 +314,8 @@ def demo_detect_intensity_peaks(tiff):
 # todo : Try entropy to enhace edges and facilitate detection https://scikit-image.org/docs/dev/auto_examples/filters/plot_entropy.html#sphx-glr-auto-examples-filters-plot-entropy-py
 
 # todo : try template matching https://scikit-image.org/docs/dev/auto_examples/features_detection/plot_template.html#sphx-glr-auto-examples-features-detection-plot-template-py
+
+# todo : try img_to_graph as (additionnal?) feature extraction prior to classification. Consider using sklearn.pipeline.
 
 
 def local_maximas(img, h=None):
@@ -806,6 +810,19 @@ def label_blob(img, blobs, filter=None, window_size=5, k=0.2):
     return label_image, blob_bin
 
 
+def label_contours(contours, shape, close_square = 2):
+    binary = np.zeros(shape)
+    for c in contours:
+        rr, cc = polygon(c[:, 0], c[:, 1], binary.shape)
+        binary[rr, cc] = 1
+        # close blanks
+
+    #bw = closing(binary, square(close_square))
+
+    # label image regions
+    label_image = label(binary)
+    return label_image, binary
+
 # Unused yet
 def extract_intensity_features_from_region(region, im):
     minr, minc, maxr, maxc = region.bbox
@@ -1003,26 +1020,40 @@ def plot_result_classif(regions, properties, labels, image):
 if __name__ == '__main__':
     embryos = fm.get_embryos()
     for emb in embryos:
-        tiff = fm.get_tiff_file(emb)
-        demo_find_cells_contours(tiff)
+        ch3 = fm.get_tiff_file(emb)[:,:,:,2]
+        contours = find_cells_contours(ch3)
+        label_img, bin = label_contours(contours,ch3[0].shape)
+        fig, ax = plt.subplots()
+        ax.imshow(bin)
+
+
+    """
+    ch1 = fm.get_tiff_file(1)[:,:,:,2]
+    contours = find_cells_contours(ch1)
+    bin = np.zeros(ch1[0].shape)
+    for c in contours :
+        rr, cc = polygon(c[:, 0], c[:, 1], bin.shape)
+        bin[rr, cc] = 1
+
+    plt.imshow(bin)"""
     plt.show()
-
-
-    """rscl_img = rscl_intensity(ch1)
+    """
+    rscl_img = rscl_intensity(ch1)
     viewer = MultiSliceViewer(rscl_img)
     all_blobs = np.array([blob_detection(img) for img in rscl_img])
     viewer.plot_imgs(blobs=all_blobs)
     plt.show()"""
 
-    """
-    label_img = label_filter(ch1, filter=100)[0]
-    regions, properties = region_properties(label_img,ch1)
 
-    r=regions[45]
+    """img = ch1[14]
+    label_img = label_filter(img, filter=0.1)[0]
+    regions = region_properties(label_img,img, properties=['coords'])
+
+    r=regions.iloc[45]
 
     coords = []
-    for region in regions :
-        for pixel in region.coords :
+    for i, region in regions.iterrows():
+        for pixel in region['coords'] :
             if len(coords)==0:
                 coords = [pixel]
             else :
@@ -1031,7 +1062,7 @@ if __name__ == '__main__':
 
     coords = np.array([[coord[0], coord[1]] for coord in coords])
 
-    coord = np.array([[coord[0], coord[1]] for coord in r.coords])
+    coord = np.array([[coord[0], coord[1]] for coord in r['coords']])
 
     coord = np.append(coord, [[32, 1050]], axis = 0)
     print(coords[:,0])
@@ -1051,13 +1082,13 @@ if __name__ == '__main__':
     # Labelliser les regions (molecules) en fonction du fait qu'elles soient dans une autre région (cellule)
     # ajouter cette labellisation aux features des régions3D
 
-    print(test)
+    print(test)"""
     #df_coords = pd.DataFrame(coord, columns=["coord"])
     #mask = df_coords.isin({'coord': coords})
 
     #demo_regions(ch3, label_img, min_area=2)
     #plt.show()
-    """
+
 
     """features = fm.get_test_features()
     features = features.drop(["centroid_3D"], axis = 1)
