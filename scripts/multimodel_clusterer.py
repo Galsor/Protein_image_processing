@@ -13,7 +13,14 @@ from sklearn.mixture import GaussianMixture
 
 import scripts.file_manager as fm
 from scripts.region_3d import extract_molecules
-from scripts.performance_monitoring import PerfLogger
+from scripts.performance_monitoring import PerfLogger, Timer
+
+""" This script aims to test multiple clustering models to label data
+Warning : some of this models requieres o(n²) memory i.e. for 20k data points it could requiere 400Go RAM. 
+This makes somes models like affinity propagation or spectral clustering unrelevent for transcription sites clustering.
+
+"""
+
 
 # Number of type of mollecules to cluster. Here 'single mollecule' and 'transcription site'
 NB_CLUSTER = 2
@@ -25,7 +32,7 @@ MIN_SAMPLE = 20
 MIN_CLUSTER_SIZE = 0.0025
 
 
-CLUSTERERS = ((AffinityPropagation(), "Affinity propagation"),
+CLUSTERERS = (#(AffinityPropagation(), "Affinity propagation"),
               (AgglomerativeClustering(n_clusters=NB_CLUSTER), "Agglomerative"),
               (Birch(n_clusters=NB_CLUSTER), "Birch"),
               (DBSCAN(min_samples=MIN_SAMPLE), "DBSCAN"),
@@ -34,11 +41,12 @@ CLUSTERERS = ((AffinityPropagation(), "Affinity propagation"),
               (KMeans(n_clusters=NB_CLUSTER, n_init=1000, max_iter=10000), "KMeans"),
               (MiniBatchKMeans(n_clusters=NB_CLUSTER, n_init=1000, max_iter=10000 ), "Mini KMeans"),
               (MeanShift(), "MeanShift"),
-              (SpectralClustering(n_clusters=NB_CLUSTER), "Spectral clustering"),
+              #(SpectralClustering(n_clusters=NB_CLUSTER), "Spectral clustering"),
               (GaussianMixture(n_components=NB_CLUSTER), "Gaussian Mixture"))
-# TODO :
-# Test DBSCAN.algorithm = ‘auto’, ‘ball_tree’, ‘kd_tree’, ‘brute’
-# Test AgglomerativeClustering.linkage : {“ward”, “complete”, “average”, “single”}
+
+# TODO : Test others models and parameters
+#Test DBSCAN.algorithm = ‘auto’, ‘ball_tree’, ‘kd_tree’, ‘brute’
+#Test AgglomerativeClustering.linkage : {“ward”, “complete”, “average”, “single”}
 # test OPTICS
 #  .metric : Valid values for metric are:
 #     from scikit-learn: [‘cityblock’, ‘cosine’, ‘euclidean’, ‘l1’, ‘l2’, ‘manhattan’]
@@ -105,7 +113,7 @@ class Multiclusterer:
             else:
                 self.labels = pd.concat([self.labels, pred], axis=1)
 
-    def classify(self,cluster):
+    def classify(self, cluster):
         # CLASSIFY DATA
         cluster.fit(self.X)
         if hasattr(cluster, 'labels_'):
@@ -123,7 +131,6 @@ class Multiclusterer:
             labels_counts[name] = labels_counts.index.map(d)
         logging.info(labels_counts)
         return labels_counts
-
 
     def export_results(self, file_name = "multiclustering_results"):
         data = pd.concat([self.features,self.labels], axis = 1)
@@ -151,22 +158,25 @@ class Multiclusterer:
 
             plot_num += 1
 
+
 #TODO broken, rendre fonctionnel
 def demo_multiclustering(X):
-    from itertools import cycle, islice
 
     plt.figure(figsize=(9 * 2 + 3, 12.5))
     plt.subplots_adjust(left=.02, right=.98, bottom=.001, top=.96, wspace=.05,
                       hspace=.01)
     plot_num = 1
-    t0 = time.time()
+    timer = Timer()
 
     #X, bandwidth, connectivity = preprocess_data(X)
 
     for cluster, name in CLUSTERERS:
-
+        print('start clustering with {}'.format(name))
+        t0 = time.time()
         # CLASSIFY DATA
         cluster.fit(X)
+        timer.step()
+        print(timer.last_step_duration())
         t1 = time.time()
         if hasattr(cluster, 'labels_'):
             y_pred = cluster.labels_.astype(np.int)
@@ -190,8 +200,6 @@ def demo_multiclustering(X):
                  horizontalalignment='right')
 
         plot_num += 1
-
-    plt.show()
 
 
 def run_multiclustering(features):
@@ -259,21 +267,12 @@ def run_all_embryos():
 
 
 if __name__ == '__main__':
-    #features = fm.get_test_features()
-    #features = features.drop('centroid_3D', axis=1)
-    #demo_multiclustering(features)
-    log = PerfLogger()
     logging.basicConfig(level=logging.INFO)
+    f1 = fm.get_test_features("Result_classif_filter100_2019-08-19-1954")
+    #f2 = fm.get_test_features("blob_pipeline_2019-08-19-1348")
 
-    tiff = fm.get_tiff_file(1)
-    log.log_step()
+    demo_multiclustering(f1)
+    #demo_multiclustering(f2)
+    plt.show()
 
-    rf = extract_molecules(tiff)
-    log.log_step()
-
-    features = rf.extract_features()
-    log.log_step()
-
-    fm.save_results(features, "features_emb1", timestamped=True)
-    log.log_step()
 
