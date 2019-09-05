@@ -51,6 +51,7 @@ class MultiSliceViewer():
             raise Exception("Impossible to set new images for MultiSliceViewer")
 
     def plot_imgs(self, blobs = None):
+        #TODO : Cleanup plot_imgs function
         if len(self.imgs.shape) == 2:
             self.imgs = np.array(self.imgs)
         self.remove_keymap_conflicts({'j', 'k'})
@@ -231,9 +232,27 @@ class MultiSliceViewer():
 
 
 def display_file(file_path):
+    #TODO : check if it works
     viewer = MultiSliceViewer(file_path)
     viewer.plot_imgs()
 
+
+def plot_single_img(image, cmap='gnuplot2', title="Undefined title"):
+    """
+    Quick image plot for debugging.
+    :param image: array-like or PIL image
+    :param cmap: colormap used by matplotlib
+    :param title: title to display
+    :return:
+    """
+    fig, ax = plt.subplots(ncols=1, nrows=1, figsize=(10, 4))
+    fig.suptitle(title)
+
+    if isinstance(image[0, 0], bool):
+        # for binarys ploting
+        ax.imshow(image, cmap='Greys', interpolation='nearest')
+    else:
+        ax.imshow(image, cmap=cmap)
 
 if __name__ == '__main__':
     FILE_NAME = "C10DsRedlessxYw_emb11_Center_Out.tif"
