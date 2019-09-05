@@ -11,6 +11,7 @@ class MultiSliceViewer():
     def __init__(self, tiff, config = 'standard', channel = 0):
         self.set_config(config)
         self.config = config
+        self.channel = channel
         if isinstance(tiff, str):
             tiff = io.imread(file_path)
             try :
@@ -37,6 +38,17 @@ class MultiSliceViewer():
 
     def get_images(self):
         return self.imgs
+
+    def set_images(self, tiff, channel=None):
+        if isinstance(tiff, np.ndarray):
+            if len(tiff.shape) == 2:
+                self.imgs = np.array(tiff)
+            elif len(tiff.shape) == 3:
+                self.imgs = tiff
+            elif len(tiff.shape) == 4 and channel is not None :
+                self.imgs = tiff[:, :, :, channel]
+        else :
+            raise Exception("Impossible to set new images for MultiSliceViewer")
 
     def plot_imgs(self, blobs = None):
         if len(self.imgs.shape) == 2:
@@ -138,6 +150,9 @@ class MultiSliceViewer():
         plt.tight_layout()
     """
 
+    def show(self):
+        plt.show()
+
     def ax_config(self, volume, ax):
         if len(volume.shape) == 2:
             ax.volume= np.array(volume)
@@ -148,9 +163,11 @@ class MultiSliceViewer():
         ax.index = volume.shape[0] // 2
         ax.imshow(volume[ax.index])
         if self.config == CONFIG[1]:
-            ax.set_title("z = {} : {} blobs detected".format(ax.index, len(self.blobs[ax.index])))
+            ax.set_title("channel : {} (z = {}) : {} blobs detected".format(self.channel, ax.index, len(self.blobs[ax.index])))
             self.add_blobs_patches(ax)
             ax.set_axis_off()
+        else :
+            ax.set_title(" channel : {} (z = {}) ".format(self.channel, ax.index))
 
     def add_blobs_patches(self, ax):
         blb = self.blobs[ax.index]
@@ -170,7 +187,6 @@ class MultiSliceViewer():
             self.next_slice(ax)
         fig.canvas.draw()
 
-
     def process_mouse(self, event):
         fig = event.canvas.figure
         ax = fig.axes[0]
@@ -180,7 +196,6 @@ class MultiSliceViewer():
             self.previous_slice(ax)
         fig.canvas.draw()
 
-
     def previous_slice(self, ax):
         volume = ax.volume
         ax.index = (ax.index - 1) % volume.shape[0]  # wrap around using %
@@ -188,9 +203,10 @@ class MultiSliceViewer():
         if self.config != CONFIG[0]:
             [p.remove() for p in reversed(ax.patches)]
             if self.config == CONFIG[1]:
-                ax.set_title("z = {} : {} blobs detected".format(ax.index, len(self.blobs[ax.index])))
+                ax.set_title("channel : {} (z = {}) : {} blobs detected".format(self.channel, ax.index,len(self.blobs[ax.index])))
                 self.add_blobs_patches(ax)
-
+        else :
+            ax.set_title(" channel : {} (z = {}) ".format(self.channel, ax.index))
 
     def next_slice(self, ax):
         volume = ax.volume
@@ -199,8 +215,10 @@ class MultiSliceViewer():
         if self.config != CONFIG[0]:
             [p.remove() for p in reversed(ax.patches)]
             if self.config == CONFIG[1]:
-                ax.set_title("z = {} : {} blobs detected".format(ax.index, len(self.blobs[ax.index])))
+                ax.set_title("channel : {} (z = {}) : {} blobs detected".format(self.channel, ax.index, len(self.blobs[ax.index])))
                 self.add_blobs_patches(ax)
+        else :
+            ax.set_title(" channel : {} (z = {}) ".format(self.channel, ax.index))
 
     def remove_keymap_conflicts(self, new_keys_set):
         for prop in plt.rcParams:
