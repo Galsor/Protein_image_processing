@@ -2,8 +2,11 @@ import logging
 
 from math import sqrt
 
+from scripts.multi_slice_viewer import MultiSliceViewer
+from scripts.performance_monitoring import Timer
 from scripts.tiff_processing import region_properties, label_filter, overlaped_regions, kmeans_classification, \
-    rscl_intensity, blob_detection, label_blob
+    rscl_intensity, blob_detection, label_blob, birch_classification, blob_extraction, find_cells_contours, \
+    label_contours
 import scripts.file_manager as fm
 
 from skimage import io
@@ -22,7 +25,8 @@ PROPERTIES = ['area',
               'perimeter',
               'intensity_image',
               'solidity']
-
+#Add inclusion in cell
+#add solidity
 
 class RegionFrame:
 
@@ -112,7 +116,8 @@ class RegionFrame:
             df = df.append(features, ignore_index=True)
         return df
 
-
+# Region 3D are implemented to work only with data dictionnaries containing the following keys :
+# 'coords', 'intensity_image', 'max_intensity', 'min_intensity', 'mean_intensity', 'centroid-0', 'centroid-1'
 class Region3D:
     def __init__(self, region, id, layer_id):
         self.id = id
@@ -157,6 +162,7 @@ class Region3D:
         return total_intensity
 
     def get_mean_intensity(self):
+        #TODO : change with mean_intensity = total_intensity / total_area
         means = []
         for layer_id, r in self.layers.iterrows():
             means.append(r['mean_intensity'])
@@ -189,11 +195,6 @@ class Region3D:
         for layer_id, r in self.layers.iterrows():
             centroids.append((r['centroid-0'], r['centroid-1']))
         return centroids
-
-    def get_equivalent_sphere(self):
-        # TODO : return radius and centroids coordinate
-
-        pass
 
     def get_extent(self):
         """Ratio of pixels in the region to pixels in the total bounding box. Computed as area / (rows * cols * height)"""
@@ -228,10 +229,7 @@ class Region3D:
                     "extent": extent
                     }
         return features
-    # Todo :
-    # - "z": self.get_layers()
-    # - prévoir un one hot encoder sur les layers
-    # Eclater le centroid en 3 coordonnées
+    # Todo : add the solidity of the image as feature of Region3D
 
 
 # ________________________________________________
@@ -249,7 +247,7 @@ def extract_regions(tiff, channel=0, min_area=2, filter=0.10, mode='region'):
         if fm.exist("data_test_blob_detect.pkl"):
             blobs, rscl_img = fm.load_pickle("data_test_blob_detect.pkl")
         else:
-            blobs, rscl_img = prepare_blob_extraction(ch)
+            blobs, rscl_img = blob_extraction(ch)
 
     init = True
     for layer, img in enumerate(ch):
@@ -283,22 +281,6 @@ def extract_regions(tiff, channel=0, min_area=2, filter=0.10, mode='region'):
     return rf
 
 
-def prepare_blob_extraction(tiff):
-    rscl_img = rscl_intensity(tiff)
-    logging.info("End rescaling")
-
-    blobs = [blob_detection(im, log_scale=True) for im in rscl_img]
-    logging.info("End blob detection")
-
-    # compute radii
-    for blobs_layer in blobs:
-        if len(blobs_layer) > 1:
-            blobs_layer[:, 2] = blobs_layer[:, 2] * sqrt(2)
-    logging.info("End compute blob radii")
-    fm.save_as_pickle([blobs, rscl_img], file_name="data_test_blob_detect")
-    return blobs, rscl_img
-
-
 def test_pipeline():
     file_path_template = "C:\\Users\\Antoine\\PycharmProjects\\Protein_image_processing\\data\\embryos\\" \
                          "C10DsRedlessxYw_emb{}_Center_Out.tif"
@@ -317,9 +299,11 @@ def test_pipeline():
         raise e
 
 
-def extract_cells(tiff, min_area=500):
-    rf = extract_regions(tiff, channel=2, min_area=min_area)
-    return rf
+def extract_cells(tiff):
+    ch3 = tiff[:,:,:,2]
+    contours = find_cells_contours(ch3)
+    label_img, bin = label_contours(contours, ch3[0].shape)
+    return label_img
 
 
 def extract_molecules(tiff, min_area=2):
@@ -334,14 +318,21 @@ def extract_molecules(tiff, min_area=2):
 
 
 if __name__ == '__main__':
-    """logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(level=logging.INFO)
+    timer = Timer()
     folder_path = "C:\\Users\\Antoine\\PycharmProjects\\Protein_image_processing\\data\\"
     file = "C10DsRedlessxYw_emb11_Center_Out.tif"
     file_path = folder_path + file
     tiff = fm.get_tiff_file(11)
-    rf = extract_regions(tiff, mode='blob')
-    features1 = rf.extract_features()
-    fm.save_results(features, "new_pipeline", timestamped=True)"""
+
+    viewer = MultiSliceViewer(tiff, channel=2)
+    #blobs, rscl_img = blob_extraction(viewer.get_images())
+    #print(blobs)
+    viewer.plot_imgs()
+
+    viewer.show()
+
+
 
 
 
