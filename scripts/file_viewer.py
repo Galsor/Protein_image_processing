@@ -8,6 +8,9 @@ from skimage import io
 import os
 import sys
 import numpy as np
+from skimage.filters import try_all_threshold
+
+import scripts.file_manager as fm
 
 CONFIG = ['standard', 'blob']
 
@@ -314,7 +317,6 @@ def display_file(file_path):
         Path of the file to display. In order to avoid any issue please enter the full adress of the file.
 
     """
-    #TODO : check if it works
     viewer = MultiLayerViewer(file_path)
     viewer.plot_imgs()
     viewer.show()
@@ -344,7 +346,9 @@ if __name__ == '__main__':
     sys.path.append(PATH_TO_ROOT_DIR)
 
     DATA_PATH = os.path.join(PATH_TO_ROOT_DIR, 'data')
-    file_path = os.path.join(DATA_PATH, FILE_NAME)
+    EMB_PATH = os.path.join(DATA_PATH, 'embryos')
+    file_path = os.path.join(EMB_PATH, FILE_NAME)
 
     display_file(file_path)
+
 
