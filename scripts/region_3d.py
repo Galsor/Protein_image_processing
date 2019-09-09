@@ -1,5 +1,5 @@
 import logging
-from scripts.file_viewer import MultiSliceViewer
+from scripts.file_viewer import MultiLayerViewer
 from scripts.performance_monitoring import Timer
 import scripts.file_manager as fm
 
@@ -221,7 +221,7 @@ if __name__ == '__main__':
     file_path = folder_path + file
     tiff = fm.get_tiff_file(11)
 
-    viewer = MultiSliceViewer(tiff, channel=2)
+    viewer = MultiLayerViewer(tiff, channel=2)
     #blobs, rscl_img = blob_extraction(viewer.get_images())
     #print(blobs)
     viewer.plot_imgs()

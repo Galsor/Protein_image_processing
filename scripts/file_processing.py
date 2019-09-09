@@ -1,3 +1,10 @@
+"""
+file_processing contains functions allowing to extract cells and proteins from the data of a tiff file.
+Theses functions wraped lower level functions of image processing and regions extractions and returns RegionFrame object containing a list of Region3D.
+This RegionFrame can be used for the features extraction needed to achieve classification.
+"""
+
+
 import logging
 
 import scripts.file_manager as fm
@@ -26,6 +33,25 @@ PROPERTIES = ['area',
 
 
 def extract_regions(tiff, channel=0, min_area=2, filter=0.10, mode='region'):
+    """
+    Extract regions3D from each layers of a tiff file.
+
+    :param tiff: ndarray
+        4 dimensions array of images in format (layers, x_img, y_img, channels)
+        ex: (40, 1000, 1000, 3)
+    :param channel: int
+        Channel to use for region extraction.
+        For mollecules use 0, for cells use 2.
+    :param min_area: int, float
+        Minimum value of region area size.
+        Increase the value of min_area to reject noise.
+    :param filter: int, float, tuple<int>, str.
+        Filter value. Refer to label_filter for further information
+    :param mode:
+        Type of region detection used. 2 modes are available : "region" and "blob".
+    :return: rf: RegionFrame
+        RegionFrame object containing all regions 3D extracted in the image.
+    """
     if not isinstance(channel, int):
         raise TypeError("Wrong type for channel value")
 
@@ -71,7 +97,24 @@ def extract_regions(tiff, channel=0, min_area=2, filter=0.10, mode='region'):
     return rf
 
 
+def extract_cells(tiff):
+    """Generate labeled image of each cells in the tiff file.
+    This methods uses contours detection to isolate cells in channel 2 of the tiff file.
+
+    :param tiff: ndarray
+        4 dimensions array of images in format (layers, x_img, y_img, channels)
+        ex: (40, 1000, 1000, 3)
+    :return: label_img: ndarray<int>
+        single image labelazing each cells detected.
+    """
+    ch3 = tiff[:,:,:,2]
+    contours = find_cells_contours(ch3)
+    label_img, bin = label_filter_contours(contours, ch3[0].shape)
+    return label_img
+
+
 def test_pipeline():
+    # function
     file_path_template = "C:\\Users\\Antoine\\PycharmProjects\\Protein_image_processing\\data\\embryos\\" \
                          "C10DsRedlessxYw_emb{}_Center_Out.tif"
     EMBRYOS = {1: (77, 24221), 7: (82, 23002), 8: (71, 15262), 10: (92, 23074)}
@@ -88,20 +131,3 @@ def test_pipeline():
     except Exception as e:
         raise e
 
-
-def extract_cells(tiff):
-    ch3 = tiff[:,:,:,2]
-    contours = find_cells_contours(ch3)
-    label_img, bin = label_filter_contours(contours, ch3[0].shape)
-    return label_img
-
-
-def extract_molecules(tiff, min_area=2):
-    logging.info("Start molecule extraction")
-    rf = extract_regions(tiff, channel=0, min_area=min_area)
-    logging.info("End of molecule extraction")
-    return rf
-
-
-# Extract des régions, classifications sur chaque layers et ajout de la labellisation par layer.
-# Sauvegarde de la labellisation pour chaque région

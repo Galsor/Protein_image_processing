@@ -1,3 +1,7 @@
+"""
+file_viewer contains several functions allowing to display multi-layer images such as tiff files.
+"""
+
 import matplotlib.pyplot as plt
 from math import sqrt
 from skimage import io
@@ -7,8 +11,24 @@ import numpy as np
 
 CONFIG = ['standard', 'blob']
 
-class MultiSliceViewer():
-    def __init__(self, tiff, config = 'standard', channel = 0):
+class MultiLayerViewer():
+    """Matplotlib viewer for diaporama display. This viewer has been configured to fit with miscroscope pictures (i.e several images 1000pxx1000px containing multiple channels.
+
+    Parameters
+    ----------
+    tiff : ndarray<int>
+        4 dimensional array containing all the images and channels. This input can be the one directly extracted from the tiff file.
+
+    config : str
+        Configuration used for displaying. 2 modes are available :
+            - 'standard' : simple display of images
+            - 'blob' : Add patches representing blobs in overlay of the standard display.
+
+    channel : int
+        Index of the channel to display.
+        Default : 0
+    """
+    def __init__(self, tiff, config = CONFIG[0], channel = 0):
         self.set_config(config)
         self.config = config
         self.channel = channel
@@ -51,27 +71,39 @@ class MultiSliceViewer():
             raise Exception("Impossible to set new images for MultiSliceViewer")
 
     def plot_imgs(self, blobs = None):
+        """ Configure the matplotlib Figure and Axes. Call this method to plot images included in the MultiLayerViewer.
+        call MultiLayerViewer.show() to display the resulting plot.
+
+        :param blobs: array
+            List of parameters resulting from preprocessing.blob_extraction method.
+        """
         #TODO : Cleanup plot_imgs function
+
+        #Plot preparation
         if len(self.imgs.shape) == 2:
+            # convert image into a list of images.
             self.imgs = np.array(self.imgs)
         self.remove_keymap_conflicts({'j', 'k'})
         if blobs is not None :
+            # Change configuration is blobs are passed as inputs
             self.set_config(CONFIG[1])
         else :
+            # If no blobs are passed as input, go to standard configuration
             self.set_config(CONFIG[0])
+
+        #Start ploting
         if self.config == 'standard':
             fig, ax = plt.subplots()
             self.ax_config(self.imgs, ax)
         elif self.config == 'blob':
-            if blobs is None :
-                raise ValueError("No blobs data while blob config is setted")
             if len(blobs) != len(self.imgs):
-                raise Exception("Blobs list hasn't the same length as image")
+                raise Exception("Blobs list must have the same length as images collection")
             self.blobs = blobs
             fig, ax = plt.subplots()
             self.ax_config(self.imgs, ax)
 
         elif self.config == 'analysis' :
+            # TODO : Add a mode that respond to picking for easier analysis. Refer to following comments
             fig, axs = plt.subplots(ncols=2, figsize=(10, 6))
             # ax_analysis_config(self.imgs, axs)
 
@@ -79,7 +111,8 @@ class MultiSliceViewer():
             raise ValueError("Wrong value for config attribute. Please use 'standard' or 'analysis' ")
         fig.canvas.mpl_connect('scroll_event', self.process_mouse)
         fig.canvas.mpl_connect('key_press_event', self.process_key)
-    """
+
+    """ # Code to inspire 'analysis' mode 
     def ax_analysis_config(volume, axs, title = "Multislices viewers"):
         #TODO to finish (conflict to solve)
         axs[0].volume = volume
@@ -152,15 +185,25 @@ class MultiSliceViewer():
     """
 
     def show(self):
+        # Method to call to display figure
         plt.show()
 
     def ax_config(self, volume, ax):
+        """ Set initial configuration of the inputed axe. If config is blob, patches are added.
+
+        :param volume: ndarray<int>
+            Image to display
+        :param ax: matplotlib.Axes
+            Axe on which to display the image
+        """
+        # Check if volume shape size is 3 (i.e collection of images)
         if len(volume.shape) == 2:
-            ax.volume= np.array(volume)
+            ax.volume = np.array(volume)
         elif len(volume.shape) == 3:
             ax.volume = volume
         else :
-            raise Exception("Some error occured while configuring axe for ploting. Check dimension of the image to plot")
+            raise Exception("Some error occurred while configuring axe for ploting. Check dimension of the image to plot")
+
         ax.index = volume.shape[0] // 2
         ax.imshow(volume[ax.index])
         if self.config == CONFIG[1]:
@@ -172,7 +215,7 @@ class MultiSliceViewer():
 
     def add_blobs_patches(self, ax):
         blb = self.blobs[ax.index]
-        #Compute radii instead of std
+        # Compute radii instead of std
         blb[:, 2] = blb[:, 2] * sqrt(2)
         for blob in blb:
             y, x, r = blob
@@ -180,6 +223,15 @@ class MultiSliceViewer():
             ax.add_patch(c)
 
     def process_key(self, event):
+        """ Function called when a keyboard event fires.
+
+        :param event: Matplotlib.Event
+            Event catched by the method fig.canvas.mpl_connect
+
+        Note:
+            Keys can be simply added or changed by modifying the conditions of this function.
+
+        """
         fig = event.canvas.figure
         ax = fig.axes[0]
         if event.key == 'j':
@@ -189,6 +241,15 @@ class MultiSliceViewer():
         fig.canvas.draw()
 
     def process_mouse(self, event):
+        """ Function called when a mouse event fires.
+
+                :param event: Matplotlib.Event
+                    Event catched by the method fig.canvas.mpl_connect
+
+                Note:
+                    Further mouse responses such as click can be simply added or changed by modifying the conditions of this function.
+
+                """
         fig = event.canvas.figure
         ax = fig.axes[0]
         if event.button == 'up':
@@ -198,6 +259,12 @@ class MultiSliceViewer():
         fig.canvas.draw()
 
     def previous_slice(self, ax):
+        """ function called to display the previous image by updating the figure.
+
+        :param ax: Matplotlib.Axes
+            Axe where the event asking for previous image fired.
+
+        """
         volume = ax.volume
         ax.index = (ax.index - 1) % volume.shape[0]  # wrap around using %
         ax.images[0].set_array(volume[ax.index])
@@ -210,6 +277,12 @@ class MultiSliceViewer():
             ax.set_title(" channel : {} (z = {}) ".format(self.channel, ax.index))
 
     def next_slice(self, ax):
+        """ function called to display the next image by updating the figure.
+
+                :param ax: Matplotlib.Axes
+                    Axe where the event asking for previous image fired.
+
+                """
         volume = ax.volume
         ax.index = (ax.index + 1) % volume.shape[0]
         ax.images[0].set_array(volume[ax.index])
@@ -222,6 +295,9 @@ class MultiSliceViewer():
             ax.set_title(" channel : {} (z = {}) ".format(self.channel, ax.index))
 
     def remove_keymap_conflicts(self, new_keys_set):
+        """ function used to avoid conflicts that occured when using keybords events.
+            This code is inspired from : https://www.datacamp.com/community/tutorials/matplotlib-3d-volumetric-data
+        """
         for prop in plt.rcParams:
             if prop.startswith('keymap.'):
                 keys = plt.rcParams[prop]
@@ -232,18 +308,24 @@ class MultiSliceViewer():
 
 
 def display_file(file_path):
+    """ Simple function to display file with the MultiLayerViewer.
+
+    :param file_path: str
+        Path of the file to display. In order to avoid any issue please enter the full adress of the file.
+
+    """
     #TODO : check if it works
-    viewer = MultiSliceViewer(file_path)
+    viewer = MultiLayerViewer(file_path)
     viewer.plot_imgs()
+    viewer.show()
 
 
 def plot_single_img(image, cmap='gnuplot2', title="Undefined title"):
-    """
-    Quick image plot for debugging.
+    """Quick image plot for debugging.
+
     :param image: array-like or PIL image
     :param cmap: colormap used by matplotlib
     :param title: title to display
-    :return:
     """
     fig, ax = plt.subplots(ncols=1, nrows=1, figsize=(10, 4))
     fig.suptitle(title)
