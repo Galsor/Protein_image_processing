@@ -131,3 +131,8 @@ def test_pipeline():
     except Exception as e:
         raise e
 
+if __name__ == '__main__':
+    tiff = fm.get_tiff_file(1)
+    rf = extract_regions(tiff, channel=0)
+    df = rf.extract_features()
+    fm.save_results(df)

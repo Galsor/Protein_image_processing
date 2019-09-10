@@ -119,12 +119,12 @@ def region_properties(label_image, image=None, min_area=1, properties=None, sepa
             inconsistent handling of images with singleton dimensions. To
             recover the old behaviour, use
             ``regionprops(np.squeeze(label_image), ...)``.
-    min_area : int, optional
-        Minimum area size of regions
-        Default is 1.
     image : (N, M) ndarray, optional
         Intensity (i.e., input) image with same size as labeled image.
         Default is None.
+    min_area : int, optional
+        Minimum area size of regions
+        Default is 1.
     properties : tuple or list of str, optional
         Properties that will be included in the resulting dictionary
         For a list of available properties, please see :func:`regionprops`.
@@ -140,31 +140,13 @@ def region_properties(label_image, image=None, min_area=1, properties=None, sepa
         Object columns are those that cannot be split in this way because the
         number of columns would change depending on the object. For example,
         ``image`` and ``coords``.
+
     Returns
     -------
-    regions : (N,) list
-        List of RegionProperties objects as returned by :func:`regionprops`.
-    out_dict : dict
-        Dictionary mapping property names to an array of values of that
-        property, one value per region. This dictionary can be used as input to
-        pandas ``DataFrame`` to map property names to columns in the frame and
-        regions to rows.
-    Notes
-    -----
-    Each column contains either a scalar property, an object property, or an
-    element in a multidimensional array.
-    Properties with scalar values for each region, such as "eccentricity", will
-    appear as a float or int array with that property name as key.
-    Multidimensional properties *of fixed size* for a given image dimension,
-    such as "centroid" (every centroid will have three elements in a 3D image,
-    no matter the region size), will be split into that many columns, with the
-    name {property_name}{separator}{element_num} (for 1D properties),
-    {property_name}{separator}{elem_num0}{separator}{elem_num1} (for 2D
-    properties), and so on.
-    For multidimensional properties that don't have a fixed size, such as
-    "image" (the image of a region varies in size depending on the region
-    size), an object array will be used, with the corresponding property name
-    as the key."""
+    r_properties : pandas.DataFrame
+        DataFrame with rows as regions and columns as region properties`.
+
+    """
     if image is None:
         regions = regionprops(label_image)
     else:
@@ -311,12 +293,12 @@ def overlaped_regions(im1, df_region1, prev_im, prev_regions, filter=0.1):
     :param filter: float, int
         Value of threshold used to generate binary image to compare
         Default : 100
-    :return: region_couples : dict<(int, RegionProperties)>
+    :return: existing_regions_map : dict<(int, RegionProperties)>
         The regions that overlap from im1 to im2 mapped with their Region3D_id
-    :return: new_regions_matched_ids: list<int>
-        Ids of regions from the new image that matched with existing Region3D
+    :return: new_regions_matched_ids: array<int>
+        List Ids of regions from the new image that matched with existing Region3D
     """
-
+    # format prev_regions to a dictionary dtype.
     if isinstance(prev_regions, dict):
         prev_regions = prev_regions
     elif isinstance(prev_regions, list):
@@ -331,15 +313,21 @@ def overlaped_regions(im1, df_region1, prev_im, prev_regions, filter=0.1):
     bin2 = label_filter(prev_im, filter)[1]
     overlap_bin = np.logical_and(bin1, bin2)
 
+    # label the region where an overlap appears
     label_overlap_image = label(overlap_bin)
+
+    # extract the properties of the overlapped regions
     df_overlap_prop = region_properties(label_overlap_image, properties=['centroid'])
+    # collect the centroids of the overlapped regions
     centroids = [(region['centroid-0'], region['centroid-1']) for i, region in df_overlap_prop.iterrows()]
 
     def build_regions_table(regions):
-        """
-        Build dictionnary to find region id thanks to coordinate research
+        """ Map all regions coordinates with their related region id
+
         :param regions: List of regions
-        :return: region_table: Dictionnary
+        :return: region_table: dict
+            Keys: tuple of coordinate (x,y)
+            Values: region id
         """
         if isinstance(regions, pd.DataFrame):
             regions = regions.iterrows()
@@ -363,13 +351,19 @@ def overlaped_regions(im1, df_region1, prev_im, prev_regions, filter=0.1):
     matching_fail = 0
     for centroid in centroids:
         try:
+            #Try to find a new region that includes the centroid of the overlap region
             existing_regions_map[prev_regions_table[centroid]] = df_region1.iloc[regions1_table[centroid]]
             new_regions_matched_ids.append(regions1_table[centroid])
         except KeyError as e:
             logging.debug("Centroid unmatched {}".format(centroid))
             matching_fail += 1
+
+    # create the list of the regions that have not match with an overlap centroid
+    #TODO : Test it works properly
+    regions_unmatched = df_region1.drop(new_regions_matched_ids)
+
     logging.info("Amount of overlaped regions :" + str(len(centroids)))
     logging.info("Amount of regions mapped : " + str(len(existing_regions_map)))
     if len(centroids) > 0:
         logging.info("Matching fails ratio :" + str(round(matching_fail / len(centroids) * 100)) + "%")
-    return existing_regions_map, new_regions_matched_ids
+    return existing_regions_map, regions_unmatched
