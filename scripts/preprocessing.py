@@ -416,7 +416,7 @@ def demo_label_filter(image):
     fig, axs = plt.subplots(nrows=2, ncols=3, sharex=True, sharey=True)
     axs[0][0].imshow(image)
     axs[0][0].set_title("Original")
-    filters = [None, 250, 0.2,  "otsu", "niblack", "sauvola"]
+    filters = [None, 250, 0.2, "otsu", "niblack", "sauvola"]
     for i in range(len(filters)):
         label_image, image_label_overlay = label_filter(image, filter=filters[i])
         row = int((i + 1) / 3)
@@ -455,7 +455,7 @@ def label_filter_blobs(img, blobs, filter=None, window_size=5, k=0.2):
         Default : 0.2
     :return:
         label_image : array, same shape and type as image
-            The result of the morphological closing
+            An image where each region included in a blob is labelized.
         blob_bin : : array, same shape and type as image
             The binary (array of booleans) resulting from the original image filtering
     """
@@ -490,45 +490,49 @@ def label_filter_blobs(img, blobs, filter=None, window_size=5, k=0.2):
     return label_image, blob_bin
 
 
-def label_filter_contours(contours, shape, close_square = 2):
+def label_filter_contours(contours, shape, close_square=5):
+    """ Generate a label image describing all regions included in a list of contours.
 
+    :param contours: array
+        List of contours where a contours is described by a list of points such as [[x1,y1],...,[xn, yn]].
+    :param shape: tuple<int>
+        Shape of the image to produce. This shape is preferable the shape of the original image
+    :param close_square: int
+        The size in pixel of the square used to close the blanks of the image.
+        Default 5.
+
+    :return:
+        label_image : array, same shape and type as image
+            An image where each region closed by a contour is labelized.
+        binary : : array, same shape and type as image
+            The binary (array of booleans) resulting from the original image filtering
+    """
     binary = np.zeros(shape)
     for c in contours:
+        # Generate a polygon from all points of a contour.
         rr, cc = polygon(c[:, 0], c[:, 1], binary.shape)
         binary[rr, cc] = 1
-        # close blanks
+
+    # close blanks
     bw = closing(binary, square(close_square))
 
-    # label image regions
+    # Create a label for each region
     label_image = label(bw)
 
-    # TODO : Tester le watersheld filtering pour eviter le merge du labeling de cellules contigues. - Problème de disparition de certaine cellule suite au labeling watersheld.
-    distance = ndi.distance_transform_edt(bw)
-    local_maxi = peak_local_max(distance, indices=False, footprint=np.ones((25, 25)),
-                                labels=bw)
-    markers = ndi.label(local_maxi)[0]
-    labels = watershed(-distance, markers, mask=bw)
+    return label_image, binary
 
-    return label_image, binary, labels
 
 def demo_filter_contours(tiff):
     imgs = tiff[:, :, :, 2]
 
     contours, i = find_cells_contours(imgs, demo=True)
 
-    fig, ax = plt.subplots(1, 2, figsize=(10, 6), sharex=True, sharey=True)
+    fig, ax = plt.subplots(figsize=(10, 6), sharex=True, sharey=True)
 
     label_image, binary, labels = label_filter_contours(contours, imgs[i].shape, close_square=5)
 
-    ax[0].imshow(label_image, cmap="magma")
+    ax[0].imshow(label_image, cmap="gist_ncar")
     ax[0].set_title("closing 5")
-
-    ax[1].imshow(labels, cmap="magma")
-    ax[1].set_title("watersheld")
 
     plt.tight_layout()
     plt.show()
-
-if __name__ == '__main__':
-    tiff = fm.get_tiff_file(1)
-    demo_filter_contours(tiff)
