@@ -1,34 +1,23 @@
 import logging
-
-from math import sqrt
-
-from scripts.multi_slice_viewer import MultiSliceViewer
+from scripts.file_viewer import MultiLayerViewer
 from scripts.performance_monitoring import Timer
-from scripts.tiff_processing import region_properties, label_filter, overlaped_regions, kmeans_classification, \
-    rscl_intensity, blob_detection, label_blob, birch_classification, blob_extraction, find_cells_contours, \
-    label_contours
 import scripts.file_manager as fm
 
-from skimage import io
 import numpy as np
 import pandas as pd
 
-PROPERTIES = ['area',
-              'centroid',
-              'coords',
-              'extent',
-              'label',
-              'local_centroid',
-              'max_intensity',
-              'mean_intensity',
-              'min_intensity',
-              'perimeter',
-              'intensity_image',
-              'solidity']
-#Add inclusion in cell
-#add solidity
 
 class RegionFrame:
+    """ A RegionFrame included every Region3D extracted from an image.
+
+    Parameters
+    --------
+    regions: dict
+        Dictionnary containing all Region3D extracted in a tiff file. Keys refers to the id of the Region3D and Values refer to the Region3D object
+    map: dict
+        Dictionnary containing all the Region3D ids sorted by layer index. Keys refers to the layer index and Values refer to a list of Region3D ids. This attribute facilitate the recovery of the regions included in a given layer of the file.
+
+    """
 
     def __init__(self, df_regions):
         region_id = 1
@@ -45,6 +34,11 @@ class RegionFrame:
         return self.regions[region_id]
 
     def get_last_id(self):
+        """ Returns the last region id recorded in the RegionFrame.
+
+        :return: int
+            Region3D id.
+        """
         try:
             id = max(self.regions.keys())
         except ValueError:
@@ -52,15 +46,39 @@ class RegionFrame:
         return id
 
     def get_last_layer_id(self):
+        """ Returns the id of the last layer recorded in the RegionFrame
+
+        :return: int
+            Last layer id
+        """
         return max(self.map.keys())
 
     def get_map(self, index):
+        """ Return the map of a specfic layer.
+
+        :param index: int
+            Layer index
+        :return: array
+            List of Region3D ids included in the given layer.
+        """
         return self.map[index]
 
     def get_last_map(self):
+        """ Return the map (list of Region3D ids) of the last recorded layer.
+
+        :return: array
+            List of Region3D ids included in the last layer.
+        """
         return self.map[self.get_last_layer_id()]
 
     def get_regions3D_in_layer(self, index):
+        """ Return a dictionary of all regions 3D included in a layer.
+
+        :param index: int
+            Layer id
+        :return: dict
+            With Keys as region id and Values as the related Region3D object.
+        """
         regions3D = {}
         for i in self.get_map(index):
             region3D = self.get_region3D(i)
@@ -68,9 +86,22 @@ class RegionFrame:
         return regions3D
 
     def get_regions3D_in_last_layer(self):
+        """ Return a dictionary of all regions 3D included in the last layer.
+
+            :return: dict
+                With Keys as region id and Values as the related Region3D object.
+        """
         return self.get_regions3D_in_layer(self.get_last_layer_id())
 
     def get_regions_in_layer(self, layer_id):
+        """ Return a dictionary including with all the regions of a given layer. Each region is mapped with it related Region3D id.
+        This function might be usefull for overlaping detection where only the last region (and not the full Region3D) is needed.
+
+        :param layer_id: int
+            Layer id
+        :return: dict
+            With Keys as Region3D id and Values as its related region.
+        """
         regions3D = self.get_regions3D_in_layer(layer_id)
         regions = {}
         for region_id, region3D in regions3D.items():
@@ -78,9 +109,22 @@ class RegionFrame:
         return regions
 
     def get_regions_in_last_layer(self):
+        """ Return a dictionary including with all the regions of the last layer. Each region is mapped with it related Region3D id.
+        This function might be usefull for overlaping detection where only the last region (and not the full Region3D) is needed.
+
+        :return: dict
+            With Keys as Region3D id and Values as its related region.
+        """
         return self.get_regions_in_layer(self.get_last_layer_id())
 
     def enrich_region3D(self, couples):
+        """ Add new regions to the related Region3D.
+
+        :param couples: dict
+            Dictionary describing a map of {key: Region3D id, value: region}
+        :return: array
+            List of the Region3D ids which have been enriched with a new region.
+        """
         partial_map = []
         for key, item in couples.items():
             region = item
@@ -92,6 +136,13 @@ class RegionFrame:
         return partial_map
 
     def populate_region3D(self, new_regions):
+        """ Create new Region3D from unmapped regions.
+
+        :param new_regions: array
+            List of regions which haven't been mapped to existing Region3D.
+        :return: array
+            List of Region3D ids newly created.
+        """
         partial_map = []
         new_layer_id = self.get_last_layer_id() + 1
         for region in new_regions:
@@ -103,40 +154,90 @@ class RegionFrame:
         return partial_map
 
     def update_map(self, existing_ids, new_ids):
+        """ Add a new layer to the maps by merging existing ids (enriched) and new ids (populated).
+
+        :param existing_ids: array
+            List of the Region3D ids which have been enriched with a new region.
+        :param new_ids:
+            List of Region3D ids newly created.
+        """
         map_id = self.get_last_layer_id() + 1
         self.map[map_id] = existing_ids + new_ids
 
     def get_amount_of_regions3D(self):
+        """ Return the total amount of Region3D in a RegionFrame
+        """
         return len(self.regions)
 
     def extract_features(self):
+        """ Extract features from all Region3D included in a RegionFrame.
+
+        :return: pandas.DataFrame
+            DataFrame with region as row and features as columns.
+
+        Note: For further information on features types, please refer to Region3D.extract_features
+        """
         df = pd.DataFrame()
         for r in self.regions.values():
             features = r.extract_features()
             df = df.append(features, ignore_index=True)
         return df
 
+
 # Region 3D are implemented to work only with data dictionnaries containing the following keys :
 # 'coords', 'intensity_image', 'max_intensity', 'min_intensity', 'mean_intensity', 'centroid-0', 'centroid-1'
 class Region3D:
+    """ Collection of regions mapped over the z axis.
+
+    Parameters
+    --------
+    id: int
+        Id of the Region3D
+    layers: pandas.DataFrame
+        DataFrame where rows are the layer id and columns are region feature
+
+    """
+
     def __init__(self, region, id, layer_id):
         self.id = id
         data = {key: [value] for key, value in region.items()}
         self.layers = pd.DataFrame(data, index=[layer_id])
 
     def add_layer(self, region):
+        """ Add a layer to the Region3D.
+
+        :param region: pandas.Series
+            Serie including all features of the region to add.
+        """
         layer_index = max(self.layers.index.values) + 1
         region = region.rename(layer_index)
         self.layers = self.layers.append(region)
 
     def get_region(self, layer_index):
+        """Return region from a given layer index
+
+        :param layer_index: int
+            Layer index
+        :return: pandas.Series
+            Series including the features of the related region
+        """
         return self.layers.loc[layer_index]
 
     def get_id(self):
+        """ Return the id of the Region3D
+
+        :return: int
+            Region3D id
+        """
         return self.id
 
     # Features extraction for classification
     def get_depth(self):
+        """ Return the amount of layer included in the Region3D.
+
+        :return: int
+            Depth of the Region3D
+        """
         return len(self.layers.index)
 
     def get_area(self):
@@ -162,11 +263,7 @@ class Region3D:
         return total_intensity
 
     def get_mean_intensity(self):
-        #TODO : change with mean_intensity = total_intensity / total_area
-        means = []
-        for layer_id, r in self.layers.iterrows():
-            means.append(r['mean_intensity'])
-        mean = np.mean(means)
+        mean = self.get_total_intensity() / self.get_area()
         return mean
 
     def get_max_intensity(self):
@@ -206,6 +303,23 @@ class Region3D:
         return extent
 
     def extract_features(self):
+        """ Return the computed features of the Region3D. These features includes:
+            - "id": id of the Region3D,
+            - "depth": depth of the Region3D,
+            - "area": Total area covered by all regions of the Region3D,
+            - "total_intensity": Sum of the intensities from all regions of the Region3D,
+            - "mean_intensity": Ratio of total intensity over total area,
+            - "max_intensity": maximum intensity over each region,
+            - "min_intensity": minimum intensity over each region,
+            - "centroid_x": x coordinate of the Region3D centroid,
+            - "centroid_y": y coordinate of the Region3D centroid,
+            - "centroid_z": z coordinate of the Region3D centroid,
+            - "extent": Ratio of pixels in the region to pixels in the total bounding box.
+        :return: dict
+            Dictionnary including Region3D's features.
+        """
+        # Todo : add the solidity of the image as feature of Region3D
+
         ids = self.id
         depth = self.get_depth()
         areas = self.get_area()
@@ -229,111 +343,3 @@ class Region3D:
                     "extent": extent
                     }
         return features
-    # Todo : add the solidity of the image as feature of Region3D
-
-
-# ________________________________________________
-# REGIONS Extraction
-
-def extract_regions(tiff, channel=0, min_area=2, filter=0.10, mode='region'):
-    if not isinstance(channel, int):
-        raise TypeError("Wrong type for channel value")
-
-    try:
-        ch = tiff[:, :, :, channel]
-    except Exception as e:
-        raise e
-    if mode == 'blob':
-        if fm.exist("data_test_blob_detect.pkl"):
-            blobs, rscl_img = fm.load_pickle("data_test_blob_detect.pkl")
-        else:
-            blobs, rscl_img = blob_extraction(ch)
-
-    init = True
-    for layer, img in enumerate(ch):
-        logging.info("_" * 80)
-        logging.info("Layer {}".format(layer))
-        logging.info("_" * 80)
-        if mode == 'region':
-            df_properties = region_properties(label_filter(img, filter=filter)[0], img, properties=PROPERTIES,
-                                              min_area=min_area)
-        if mode == 'blob':
-            #img = rscl_img[layer]
-            layer_blobs = blobs[layer]
-            df_properties = region_properties(label_blob(img, layer_blobs, filter=filter)[0], img, properties=PROPERTIES,
-                                              min_area=min_area)
-        # Previously test if 'regions' existing. Region has been replaced by df_properties
-        if init:
-            rf = RegionFrame(df_properties)
-            init = False
-            prev_img = img
-        elif not init:
-            region_dict = rf.get_regions_in_last_layer()
-            matched_regions, new_regions_matched_ids = overlaped_regions(img, df_properties, prev_img, region_dict,
-                                                                         filter=filter)
-            existing_regions_map = rf.enrich_region3D(matched_regions)
-            new_regions = [region for idx, region in df_properties.iterrows() if idx not in new_regions_matched_ids]
-            new_regions_map = rf.populate_region3D(new_regions)
-            rf.update_map(existing_regions_map, new_regions_map)
-            prev_img = img
-
-    logging.info("Total amount of regions detected {}".format(rf.get_amount_of_regions3D()))
-    return rf
-
-
-def test_pipeline():
-    file_path_template = "C:\\Users\\Antoine\\PycharmProjects\\Protein_image_processing\\data\\embryos\\" \
-                         "C10DsRedlessxYw_emb{}_Center_Out.tif"
-    EMBRYOS = {1: (77, 24221), 7: (82, 23002), 8: (71, 15262), 10: (92, 23074)}
-
-    try:
-        results = {}
-        for embryo in EMBRYOS.keys():
-            file_path = file_path_template.format(embryo)
-            results[embryo] = extract_regions(file_path).get_amount_of_regions3D()
-        for embryo, r in results.items():
-            expected = EMBRYOS[embryo][0] + EMBRYOS[embryo][1]
-            logging.info(" {} (expected {} ) proteins detected for embryo {}").format(r, expected, embryo)
-
-    except Exception as e:
-        raise e
-
-
-def extract_cells(tiff):
-    ch3 = tiff[:,:,:,2]
-    contours = find_cells_contours(ch3)
-    label_img, bin = label_contours(contours, ch3[0].shape)
-    return label_img
-
-
-def extract_molecules(tiff, min_area=2):
-    logging.info("Start molecule extraction")
-    rf = extract_regions(tiff, channel=0, min_area=min_area)
-    logging.info("End of molecule extraction")
-    return rf
-
-
-# Extract des régions, classifications sur chaque layers et ajout de la labellisation par layer.
-# Sauvegarde de la labellisation pour chaque région
-
-
-if __name__ == '__main__':
-    logging.basicConfig(level=logging.INFO)
-    timer = Timer()
-    folder_path = "C:\\Users\\Antoine\\PycharmProjects\\Protein_image_processing\\data\\"
-    file = "C10DsRedlessxYw_emb11_Center_Out.tif"
-    file_path = folder_path + file
-    tiff = fm.get_tiff_file(11)
-
-    viewer = MultiSliceViewer(tiff, channel=2)
-    #blobs, rscl_img = blob_extraction(viewer.get_images())
-    #print(blobs)
-    viewer.plot_imgs()
-
-    viewer.show()
-
-
-
-
-
-

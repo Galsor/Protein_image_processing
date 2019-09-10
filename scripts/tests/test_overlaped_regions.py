@@ -1,7 +1,10 @@
 from unittest import TestCase
 
-from scripts.tiff_processing import region_properties, label_filter, overlaped_regions
 import numpy as np
+
+from scripts.preprocessing import label_filter
+from scripts.region import region_properties, overlaped_regions
+
 
 class TestOverlaped_regions(TestCase):
     def setUp(self):
