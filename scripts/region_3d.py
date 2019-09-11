@@ -145,11 +145,11 @@ class RegionFrame:
         """
         partial_map = []
         new_layer_id = self.get_last_layer_id() + 1
-        for region in new_regions:
-            region_id = self.get_last_id() + 1
-            partial_map.append(region_id)
-            region3D = Region3D(region, region_id, new_layer_id)
-            self.regions[region_id] = region3D
+        for id_region, region in new_regions.iterrows():
+            region3D_id = self.get_last_id() + 1
+            partial_map.append(region3D_id)
+            region3D = Region3D(region, region3D_id, new_layer_id)
+            self.regions[region3D_id] = region3D
         logging.info("regions created in layer {0} : {1}".format(new_layer_id, len(new_regions)))
         return partial_map
 
@@ -181,6 +181,7 @@ class RegionFrame:
         for r in self.regions.values():
             features = r.extract_features()
             df = df.append(features, ignore_index=True)
+        df.set_index('id')
         return df
 
 
@@ -302,6 +303,16 @@ class Region3D:
         extent = self.get_area() / np.prod([rows, cols, height])
         return extent
 
+    def get_convex_area(self):
+        c_area = 0
+        for i, r in self.layers.iterrows():
+            c_area += r['convex_area']
+        return c_area
+
+
+    def get_solidity(self):
+        return self.get_area() / self.get_convex_area()
+
     def extract_features(self):
         """ Return the computed features of the Region3D. These features includes:
             - "id": id of the Region3D,
@@ -315,6 +326,7 @@ class Region3D:
             - "centroid_y": y coordinate of the Region3D centroid,
             - "centroid_z": z coordinate of the Region3D centroid,
             - "extent": Ratio of pixels in the region to pixels in the total bounding box.
+            - "solidity": Ratio of the region area with the area of the smallest hull polygon that that surround the region
         :return: dict
             Dictionnary including Region3D's features.
         """
@@ -329,6 +341,7 @@ class Region3D:
         min_intensity = self.get_min_intensity()
         x, y, z = self.get_centroid_3D()
         extent = self.get_extent()
+        solidity = self.get_solidity()
 
         features = {"id": ids,
                     "depth": depth,
@@ -340,6 +353,7 @@ class Region3D:
                     "centroid_x": x,
                     "centroid_y": y,
                     "centroid_z": z,
-                    "extent": extent
+                    "extent": extent,
+                    "solidity": solidity
                     }
         return features
