@@ -85,11 +85,14 @@ def extract_regions(tiff, channel=0, min_area=2, filter=0.10, mode='region'):
             prev_img = img
         elif not init:
             region_dict = rf.get_regions_in_last_layer()
-            matched_regions, new_regions_matched_ids = overlaped_regions(img, df_properties, prev_img, region_dict,
+            matched_regions, new_regions = overlaped_regions(img, df_properties, prev_img, region_dict,
                                                                          filter=filter)
             existing_regions_map = rf.enrich_region3D(matched_regions)
-            new_regions = [region for idx, region in df_properties.iterrows() if idx not in new_regions_matched_ids]
-            new_regions_map = rf.populate_region3D(new_regions)
+            #new_regions = [region for idx, region in df_properties.iterrows() if idx in new_regions_matched_ids]
+            if not new_regions.empty:
+                new_regions_map = rf.populate_region3D(new_regions)
+            else:
+                new_regions_map = []
             rf.update_map(existing_regions_map, new_regions_map)
             prev_img = img
 
@@ -132,7 +135,10 @@ def test_pipeline():
         raise e
 
 if __name__ == '__main__':
-    tiff = fm.get_tiff_file(1)
-    rf = extract_regions(tiff, channel=0)
-    df = rf.extract_features()
-    fm.save_results(df)
+    logging.basicConfig(level=logging.DEBUG)
+    embs = fm.get_embryos()
+    for emb in embs :
+        tiff = fm.get_tiff_file(emb)
+        rf = extract_regions(tiff, channel=0)
+        df = rf.extract_features()
+        fm.save_results(df, file_name="features_extraction_emb{}_", timestamped=True)
