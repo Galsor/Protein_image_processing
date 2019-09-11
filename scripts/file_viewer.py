@@ -319,7 +319,7 @@ def display_file(file_path):
     """
     viewer = MultiLayerViewer(file_path)
     viewer.plot_imgs()
-    viewer.show()
+    #viewer.show()
 
 
 def plot_single_img(image, cmap='gnuplot2', title="Undefined title"):
@@ -339,7 +339,7 @@ def plot_single_img(image, cmap='gnuplot2', title="Undefined title"):
         ax.imshow(image, cmap=cmap)
 
 if __name__ == '__main__':
-    FILE_NAME = "C10DsRedlessxYw_emb11_Center_Out.tif"
+    """FILE_NAME = "C10DsRedlessxYw_emb11_Center_Out.tif"
 
     PATH_TO_CURRENT_DIR = os.path.abspath(os.path.dirname(__file__))
     PATH_TO_ROOT_DIR = os.path.normpath(os.path.join(PATH_TO_CURRENT_DIR, '..'))
@@ -347,8 +347,15 @@ if __name__ == '__main__':
 
     DATA_PATH = os.path.join(PATH_TO_ROOT_DIR, 'data')
     EMB_PATH = os.path.join(DATA_PATH, 'embryos')
-    file_path = os.path.join(EMB_PATH, FILE_NAME)
+    file_path = os.path.join(EMB_PATH, FILE_NAME)"""
 
-    display_file(file_path)
+    emb8 = fm.get_tiff_file(8)
+    emb7 = fm.get_tiff_file(7)
+    viewer8 = MultiLayerViewer(emb8)
+    viewer7 = MultiLayerViewer(emb7)
+    viewer7.plot_imgs()
+    viewer8.plot_imgs()
+    plt.show()
+#    display_file(file_path)
 
 
