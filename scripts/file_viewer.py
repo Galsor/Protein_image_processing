@@ -3,6 +3,7 @@ file_viewer contains several functions allowing to display multi-layer images su
 """
 
 import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
 from math import sqrt
 from skimage import io
 import os
@@ -11,8 +12,10 @@ import numpy as np
 from skimage.filters import try_all_threshold
 
 import scripts.file_manager as fm
+from scripts.preprocessing import label_filter
+from scripts.region import region_properties
 
-CONFIG = ['standard', 'blob']
+CONFIG = ['standard', 'blob', 'region']
 
 class MultiLayerViewer():
     """Matplotlib viewer for diaporama display. This viewer has been configured to fit with miscroscope pictures (i.e several images 1000pxx1000px containing multiple channels.
@@ -32,11 +35,12 @@ class MultiLayerViewer():
         Default : 0
     """
     def __init__(self, tiff, config = CONFIG[0], channel = 0):
+        #TODO : Add figure title
         self.set_config(config)
         self.config = config
         self.channel = channel
         if isinstance(tiff, str):
-            tiff = io.imread(file_path)
+            tiff = io.imread(tiff)
             try :
                 self.imgs = tiff[:,:,:,channel]
             except ValueError as e :
@@ -73,119 +77,46 @@ class MultiLayerViewer():
         else :
             raise Exception("Impossible to set new images for MultiSliceViewer")
 
-    def plot_imgs(self, blobs = None):
+    def plot_imgs(self, blobs = None, properties = None):
         """ Configure the matplotlib Figure and Axes. Call this method to plot images included in the MultiLayerViewer.
         call MultiLayerViewer.show() to display the resulting plot.
 
         :param blobs: array
             List of parameters resulting from preprocessing.blob_extraction method.
         """
-        #TODO : Cleanup plot_imgs function
 
         #Plot preparation
         if len(self.imgs.shape) == 2:
             # convert image into a list of images.
             self.imgs = np.array(self.imgs)
         self.remove_keymap_conflicts({'j', 'k'})
-        if blobs is not None :
+        if blobs is not None:
             # Change configuration is blobs are passed as inputs
             self.set_config(CONFIG[1])
+        elif properties is not None:
+            self.set_config(CONFIG[2])
         else :
             # If no blobs are passed as input, go to standard configuration
             self.set_config(CONFIG[0])
 
         #Start ploting
-        if self.config == 'standard':
-            fig, ax = plt.subplots()
-            self.ax_config(self.imgs, ax)
-        elif self.config == 'blob':
+        if self.config == CONFIG[1]:
             if len(blobs) != len(self.imgs):
                 raise Exception("Blobs list must have the same length as images collection")
             self.blobs = blobs
-            fig, ax = plt.subplots()
-            self.ax_config(self.imgs, ax)
-
-        elif self.config == 'analysis' :
-            # TODO : Add a mode that respond to picking for easier analysis. Refer to following comments
-            fig, axs = plt.subplots(ncols=2, figsize=(10, 6))
-            # ax_analysis_config(self.imgs, axs)
-
+        elif self.config == CONFIG[2] :
+            if len(properties) != len(self.imgs):
+                raise Exception("Properties list must have the same length as images collection")
+            self.properties = properties
         else :
             raise ValueError("Wrong value for config attribute. Please use 'standard' or 'analysis' ")
+
+        fig, ax = plt.subplots()
+        self.ax_config(self.imgs, ax)
+
+        #Set event catchers
         fig.canvas.mpl_connect('scroll_event', self.process_mouse)
         fig.canvas.mpl_connect('key_press_event', self.process_key)
-
-    """ # Code to inspire 'analysis' mode 
-    def ax_analysis_config(volume, axs, title = "Multislices viewers"):
-        #TODO to finish (conflict to solve)
-        axs[0].volume = volume
-        axs.index = volume.shape[0] // 2
-    
-        img = volume[axs.index]
-        label_image = label_filter(img, filter=0.10)[0]
-        regions, props = region_properties(label_image, img, min_area=4,
-                                           properties=['extent', 'max_intensity', 'area', "mean_intensity", "bbox"])
-    
-        def draw_rectangles(properties, picked_region=None):
-            axs[0].clear()
-            axs[0].imshow(volume[ax.index], cmap='gnuplot2')
-            print(picked_region)
-            if picked_region is not None:
-                picked_minr = picked_region['bbox-0'].values
-                picked_minc = picked_region['bbox-1'].values
-                picked_maxr = picked_region['bbox-2'].values
-                picked_maxc = picked_region['bbox-3'].values
-                picked_bbox = [picked_minr, picked_minc, picked_maxr, picked_maxc]
-                print(picked_bbox)
-            for index, row in properties.iterrows():  # draw rectangle around segmented coins
-                minr = properties['bbox-0'].iloc[index]
-                minc = properties['bbox-1'].iloc[index]
-                maxr = properties['bbox-2'].iloc[index]
-                maxc = properties['bbox-3'].iloc[index]
-                bbox = [minr, minc, maxr, maxc]
-    
-                if picked_region is not None and picked_bbox == bbox:
-                    rect = mpatches.Rectangle((minc, minr), maxc - minc, maxr - minr,
-                                              fill=False, edgecolor='red', linewidth=2)
-                else:
-                    rect = mpatches.Rectangle((minc, minr), maxc - minc, maxr - minr,
-                                              fill=False, edgecolor='blue', linewidth=2)
-                axs[0].add_patch(rect)
-    
-        draw_rectangles(props)
-    
-        print(props.shape)
-        print(props.head())
-    
-        points = axs[1].scatter(x=props['area'], y=props["mean_intensity"], facecolors=["C0"] * len(props),
-                                edgecolors=["C0"] * len(props), picker=True)
-        fc = points.get_facecolors()
-    
-        def change_point_color(indexes):
-            for i in indexes:  # might be more than one point if ambiguous click
-                new_fc = fc.copy()
-                new_fc[i, :] = (1, 0, 0, 1)
-                points.set_facecolors(new_fc)
-                points.set_edgecolors(new_fc)
-            fig.canvas.draw_idle()
-    
-        axs[1].set_title("{} regions detected".format(props.shape[0]))
-        axs[0].set_axis_off()
-        fig.suptitle(title, fontsize=14, fontweight='bold')
-    
-        def onpick(event):
-            print("Fire")
-            ind = event.ind
-            if len(ind) > 1:
-                ind = [ind[0]]
-            change_point_color(ind)
-            region_props_picked = props.iloc[ind]
-            draw_rectangles(props, region_props_picked)
-    
-        fig.canvas.mpl_connect('pick_event', onpick)
-    
-        plt.tight_layout()
-    """
 
     def show(self):
         # Method to call to display figure
@@ -209,10 +140,19 @@ class MultiLayerViewer():
 
         ax.index = volume.shape[0] // 2
         ax.imshow(volume[ax.index])
+        self.update_image_info(ax)
+
+    def update_image_info(self, ax):
+        if ax.patches is not None:
+            [p.remove() for p in reversed(ax.patches)]
+
         if self.config == CONFIG[1]:
             ax.set_title("channel : {} (z = {}) : {} blobs detected".format(self.channel, ax.index, len(self.blobs[ax.index])))
             self.add_blobs_patches(ax)
-            ax.set_axis_off()
+        elif self.config == CONFIG[2]:
+            ax.set_title(
+                "channel : {} (z = {}) : {} regions detected".format(self.channel, ax.index, len(self.properties[ax.index].values)))
+            self.add_rect_patches(ax)
         else :
             ax.set_title(" channel : {} (z = {}) ".format(self.channel, ax.index))
 
@@ -224,6 +164,17 @@ class MultiLayerViewer():
             y, x, r = blob
             c = plt.Circle((x, y), r, color='blue', linewidth=2, fill=False)
             ax.add_patch(c)
+
+    def add_rect_patches(self, ax):
+        properties = self.properties[ax.index]
+        for index, row in properties.iterrows():  # draw rectangle around segmented coins
+            minr = properties['bbox-0'].iloc[index]
+            minc = properties['bbox-1'].iloc[index]
+            maxr = properties['bbox-2'].iloc[index]
+            maxc = properties['bbox-3'].iloc[index]
+            rect = mpatches.Rectangle((minc, minr), maxc - minc, maxr - minr,
+                                          fill=False, edgecolor='blue', linewidth=2)
+            ax.add_patch(rect)
 
     def process_key(self, event):
         """ Function called when a keyboard event fires.
@@ -271,13 +222,7 @@ class MultiLayerViewer():
         volume = ax.volume
         ax.index = (ax.index - 1) % volume.shape[0]  # wrap around using %
         ax.images[0].set_array(volume[ax.index])
-        if self.config != CONFIG[0]:
-            [p.remove() for p in reversed(ax.patches)]
-            if self.config == CONFIG[1]:
-                ax.set_title("channel : {} (z = {}) : {} blobs detected".format(self.channel, ax.index,len(self.blobs[ax.index])))
-                self.add_blobs_patches(ax)
-        else :
-            ax.set_title(" channel : {} (z = {}) ".format(self.channel, ax.index))
+        self.update_image_info(ax)
 
     def next_slice(self, ax):
         """ function called to display the next image by updating the figure.
@@ -289,13 +234,7 @@ class MultiLayerViewer():
         volume = ax.volume
         ax.index = (ax.index + 1) % volume.shape[0]
         ax.images[0].set_array(volume[ax.index])
-        if self.config != CONFIG[0]:
-            [p.remove() for p in reversed(ax.patches)]
-            if self.config == CONFIG[1]:
-                ax.set_title("channel : {} (z = {}) : {} blobs detected".format(self.channel, ax.index, len(self.blobs[ax.index])))
-                self.add_blobs_patches(ax)
-        else :
-            ax.set_title(" channel : {} (z = {}) ".format(self.channel, ax.index))
+        self.update_image_info(ax)
 
     def remove_keymap_conflicts(self, new_keys_set):
         """ function used to avoid conflicts that occured when using keybords events.
@@ -349,13 +288,84 @@ if __name__ == '__main__':
     EMB_PATH = os.path.join(DATA_PATH, 'embryos')
     file_path = os.path.join(EMB_PATH, FILE_NAME)"""
 
-    emb8 = fm.get_tiff_file(8)
-    emb7 = fm.get_tiff_file(7)
-    viewer8 = MultiLayerViewer(emb8)
-    viewer7 = MultiLayerViewer(emb7)
-    viewer7.plot_imgs()
-    viewer8.plot_imgs()
+    emb = fm.get_tiff_file(8)
+    ch1 = emb[:, :, :, 0]
+    lbl_img = label_filter(ch1[0])[0]
+    props = [region_properties(label_image=label_filter(img, filter=100)[0],image=img, properties=['extent', 'max_intensity', 'area', "mean_intensity", "bbox"]) for img in ch1 ]
+    viewer = MultiLayerViewer(emb, channel=0)
+    viewer.plot_imgs(properties=props)
     plt.show()
 #    display_file(file_path)
 
+    """
+     # Code to inspire 'analysis' mode
+    def ax_analysis_config(volume, axs, title = "Multislices viewers"):
+        #TODO to finish (conflict to solve)
+        axs[0].volume = volume
+        axs.index = volume.shape[0] // 2
 
+        img = volume[axs.index]
+        label_image = label_filter(img, filter=0.10)[0]
+        regions, props = region_properties(label_image, img, min_area=4,
+                                           properties=['extent', 'max_intensity', 'area', "mean_intensity", "bbox"])
+
+        def draw_rectangles(properties, picked_region=None):
+            axs[0].clear()
+            axs[0].imshow(volume[ax.index], cmap='gnuplot2')
+            print(picked_region)
+            if picked_region is not None:
+                picked_minr = picked_region['bbox-0'].values
+                picked_minc = picked_region['bbox-1'].values
+                picked_maxr = picked_region['bbox-2'].values
+                picked_maxc = picked_region['bbox-3'].values
+                picked_bbox = [picked_minr, picked_minc, picked_maxr, picked_maxc]
+                print(picked_bbox)
+            for index, row in properties.iterrows():  # draw rectangle around segmented coins
+                minr = properties['bbox-0'].iloc[index]
+                minc = properties['bbox-1'].iloc[index]
+                maxr = properties['bbox-2'].iloc[index]
+                maxc = properties['bbox-3'].iloc[index]
+                bbox = [minr, minc, maxr, maxc]
+
+                if picked_region is not None and picked_bbox == bbox:
+                    rect = mpatches.Rectangle((minc, minr), maxc - minc, maxr - minr,
+                                              fill=False, edgecolor='red', linewidth=2)
+                else:
+                    rect = mpatches.Rectangle((minc, minr), maxc - minc, maxr - minr,
+                                              fill=False, edgecolor='blue', linewidth=2)
+                axs[0].add_patch(rect)
+
+        draw_rectangles(props)
+
+        print(props.shape)
+        print(props.head())
+
+        points = axs[1].scatter(x=props['area'], y=props["mean_intensity"], facecolors=["C0"] * len(props),
+                                edgecolors=["C0"] * len(props), picker=True)
+        fc = points.get_facecolors()
+
+        def change_point_color(indexes):
+            for i in indexes:  # might be more than one point if ambiguous click
+                new_fc = fc.copy()
+                new_fc[i, :] = (1, 0, 0, 1)
+                points.set_facecolors(new_fc)
+                points.set_edgecolors(new_fc)
+            fig.canvas.draw_idle()
+
+        axs[1].set_title("{} regions detected".format(props.shape[0]))
+        axs[0].set_axis_off()
+        fig.suptitle(title, fontsize=14, fontweight='bold')
+
+        def onpick(event):
+            print("Fire")
+            ind = event.ind
+            if len(ind) > 1:
+                ind = [ind[0]]
+            change_point_color(ind)
+            region_props_picked = props.iloc[ind]
+            draw_rectangles(props, region_props_picked)
+
+        fig.canvas.mpl_connect('pick_event', onpick)
+
+        plt.tight_layout()
+"""
