@@ -108,8 +108,9 @@ class MultiLayerViewer():
             if len(properties) != len(self.imgs):
                 raise Exception("Properties list must have the same length as images collection")
             self.properties = properties
-        else :
-            raise ValueError("Wrong value for config attribute. Please use 'standard' or 'analysis' ")
+        elif self.config not in CONFIG :
+            raise ValueError("Wrong value for config attribute. Please use 'standard', 'blob' or 'region' ")
+
 
         fig, ax = plt.subplots()
         self.ax_config(self.imgs, ax)

@@ -7,7 +7,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 from math import sqrt
 from scipy.signal import find_peaks
-from scipy import ndimage as ndi
 
 from skimage.filters import threshold_otsu, threshold_niblack, threshold_sauvola
 from skimage.morphology import closing, square, watershed
