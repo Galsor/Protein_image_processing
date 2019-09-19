@@ -58,7 +58,7 @@ def save_results(df, file_name=None, timestamped=False):
         raise TypeError("Inputs of save_results are not pandas.DataFrame")
 
 
-def get_test_features(file_name="Features_cells_C10DsRedlessxYw_emb11_Center_Out.tif.csv"):
+def get_data_from_file(file_name="Features_cells_C10DsRedlessxYw_emb11_Center_Out.tif.csv"):
     """ Return DataFrame from existing .csv file in the data directory.
 
     :param file_name: str
@@ -66,7 +66,8 @@ def get_test_features(file_name="Features_cells_C10DsRedlessxYw_emb11_Center_Out
     :return: df: pandas.DataFrame
         the data.
     """
-    if file_name[:-4]!=".csv":
+    # TODO Explore all subdirectories of ./data (even sub-sub directories)
+    if file_name[-4:]!=".csv":
         file_name+=".csv"
 
     #path = os.path.join(DATA_PATH, file_name)
@@ -172,3 +173,15 @@ def get_data_subdirs():
         if os.path.isdir(DATA_PATH+"\\"+x):
             dirs.append(x)
     return dirs
+
+
+def get_files(dir = None):
+    files = []
+    dir_path = DATA_PATH
+    if dir is not None :
+        dir_path = os.path.join(DATA_PATH, dir)
+
+    for x in os.listdir(dir_path):
+        if os.path.isfile(dir_path + "\\" + x):
+            files.append(x)
+    return files
