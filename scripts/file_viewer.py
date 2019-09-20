@@ -4,18 +4,17 @@ file_viewer contains several functions allowing to display multi-layer images su
 
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
+import matplotlib.cm as cm
 from math import sqrt
 from skimage import io
-import os
-import sys
 import numpy as np
-from skimage.filters import try_all_threshold
+import pandas as pd
 
 import scripts.file_manager as fm
 from scripts.preprocessing import label_filter
 from scripts.region import region_properties
 
-CONFIG = ['standard', 'blob', 'region']
+CONFIG = ['standard', 'blob', 'region','classif']
 
 class MultiLayerViewer():
     """Matplotlib viewer for diaporama display. This viewer has been configured to fit with miscroscope pictures (i.e several images 1000pxx1000px containing multiple channels.
@@ -29,6 +28,8 @@ class MultiLayerViewer():
         Configuration used for displaying. 2 modes are available :
             - 'standard' : simple display of images
             - 'blob' : Add patches representing blobs in overlay of the standard display.
+            - 'region' : Add rectangles representing bbox of regions.
+            - 'classif': Add colored square patches representing the result of the classification
 
     channel : int
         Index of the channel to display.
@@ -77,7 +78,7 @@ class MultiLayerViewer():
         else :
             raise Exception("Impossible to set new images for MultiSliceViewer")
 
-    def plot_imgs(self, blobs = None, properties = None):
+    def plot_imgs(self, blobs = None, properties = None, features = None):
         """ Configure the matplotlib Figure and Axes. Call this method to plot images included in the MultiLayerViewer.
         call MultiLayerViewer.show() to display the resulting plot.
 
@@ -95,6 +96,8 @@ class MultiLayerViewer():
             self.set_config(CONFIG[1])
         elif properties is not None:
             self.set_config(CONFIG[2])
+        elif features is not None:
+            self.set_config(CONFIG[3])
         else :
             # If no blobs are passed as input, go to standard configuration
             self.set_config(CONFIG[0])
@@ -104,11 +107,14 @@ class MultiLayerViewer():
             if len(blobs) != len(self.imgs):
                 raise Exception("Blobs list must have the same length as images collection")
             self.blobs = blobs
-        elif self.config == CONFIG[2] :
+        elif self.config == CONFIG[2]:
             if len(properties) != len(self.imgs):
                 raise Exception("Properties list must have the same length as images collection")
             self.properties = properties
-        elif self.config not in CONFIG :
+        elif self.config == CONFIG[3]:
+            self.features = features
+            self.prepare_features()
+        elif self.config not in CONFIG:
             raise ValueError("Wrong value for config attribute. Please use 'standard', 'blob' or 'region' ")
 
 
@@ -152,8 +158,11 @@ class MultiLayerViewer():
             self.add_blobs_patches(ax)
         elif self.config == CONFIG[2]:
             ax.set_title(
-                "channel : {} (z = {}) : {} regions detected".format(self.channel, ax.index, len(self.properties[ax.index].values)))
-            self.add_rect_patches(ax)
+                "channel : {} (z = {}) : {} regions detected".format(self.channel, ax.index, len(self.properties[ax.index])))
+            self.add_rect_patches(ax, self.properties[ax.index])
+        elif self.config == CONFIG[3]:
+            ax.set_title("channel : {} (z = {}) : {} regions detected".format(self.channel, ax.index, len(self.features[ax.index])))
+            self.add_rect_patches(ax, self.features[ax.index])
         else :
             ax.set_title(" channel : {} (z = {}) ".format(self.channel, ax.index))
 
@@ -166,15 +175,18 @@ class MultiLayerViewer():
             c = plt.Circle((x, y), r, color='blue', linewidth=2, fill=False)
             ax.add_patch(c)
 
-    def add_rect_patches(self, ax):
-        properties = self.properties[ax.index]
+    def add_rect_patches(self, ax, properties):
+        cmap = cm.get_cmap('Set1')
         for index, row in properties.iterrows():  # draw rectangle around segmented coins
-            minr = properties['bbox-0'].iloc[index]
-            minc = properties['bbox-1'].iloc[index]
-            maxr = properties['bbox-2'].iloc[index]
-            maxc = properties['bbox-3'].iloc[index]
+            c_ind = 0
+            if 'label' in properties.columns:
+                c_ind = row["label"]
+            minr = row['bbox-0']
+            minc = row['bbox-1']
+            maxr = row['bbox-2']
+            maxc = row['bbox-3']
             rect = mpatches.Rectangle((minc, minr), maxc - minc, maxr - minr,
-                                          fill=False, edgecolor='blue', linewidth=2)
+                                          fill=False, edgecolor=cmap(c_ind), linewidth=2)
             ax.add_patch(rect)
 
     def process_key(self, event):
@@ -247,6 +259,46 @@ class MultiLayerViewer():
                 remove_list = set(keys) & new_keys_set
                 for key in remove_list:
                     keys.remove(key)
+
+    def prepare_features(self):
+        """ Update self.features by adding bounding box coordinates and spliting the DataFrame into a list of Dataframe where each line is a Z coordinate of the image.
+
+        """
+        temp = pd.DataFrame()
+        for i, row in self.features.iterrows():
+            depth = row['depth']
+            c_x = row['centroid_x']
+            c_y = row['centroid_y']
+            c_z = row['centroid_z']
+            area = row['area']
+
+            #Regions are reprensented with square
+            half_square_side = int(sqrt(area/depth) / 2)
+            row['bbox-0'] = int(c_y - half_square_side)
+            row['bbox-1'] = int(c_x - half_square_side)
+            row['bbox-2'] = int(c_y + half_square_side)
+            row['bbox-3'] = int(c_x + half_square_side)
+
+            print(row)
+
+            if depth > 1:
+                # Avoid incertitude when depth is pair by increasing the depth.
+                depth = depth + 1 if depth % 2 == 0 else depth
+                # compute the amount of line to generate before and after z
+                rad = (depth - 1)/2
+                for z in range(int(c_z - rad),int(c_z +rad), 1):
+                    r = row.copy()
+                    r['centroid_z'] = z
+                    r['depth'] = 1
+                    temp = temp.append(r, ignore_index=True)
+            else:
+                temp = temp.append(row, ignore_index=True)
+
+        #Split features in one dataframe per layer layers
+        features = []
+        for z in range(len(self.imgs)):
+            features.append(temp.loc[temp['centroid_z'] == z])
+        self.features = features
 
 
 
