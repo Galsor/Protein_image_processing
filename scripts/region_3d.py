@@ -301,8 +301,8 @@ class Region3D:
 
     def get_centroid_3D(self):
         centroids = self.get_local_centroids()
-        x = int(np.sum([c[0] for c in centroids]) / float(len(centroids)))
-        y = int(np.sum([c[1] for c in centroids]) / float(len(centroids)))
+        y = int(np.sum([c[0] for c in centroids]) / float(len(centroids)))
+        x = int(np.sum([c[1] for c in centroids]) / float(len(centroids)))
         z = np.mean(self.layers.index.values).astype(int)
         return x, y, z
 
