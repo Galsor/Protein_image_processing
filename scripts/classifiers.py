@@ -1,3 +1,5 @@
+import logging
+
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
@@ -11,6 +13,29 @@ from sklearn.mixture import GaussianMixture
 from sklearn.preprocessing import StandardScaler
 
 import scripts.file_manager as fm
+
+#TODO :
+# - Test KernelPCA
+# - Test parameters of shiftMeans
+from scripts.file_viewer import MultiLayerViewer
+
+
+def classify(features):
+    """ Complete Pipeline used classify features and identify transcription sites
+
+    :param features:
+    :return:
+    """
+    f = tail_filter(features)
+    X = normalize_and_center(f)
+    X = principal_component_analysis(X)
+    labels = mean_shift_classification(X)
+    labels.name="label"
+    ts_label = labels.value_counts().idxmax()
+    f_label = pd.concat([f.reset_index(), labels], axis=1).set_index('index')
+    df_ts = f_label.loc[f_label["label"]==0]
+    print(len(df_ts))
+    return f_label
 
 
 def mean_shift_classification(features):
@@ -75,7 +100,8 @@ def normalize_and_center(X):
 def principal_component_analysis(X, n_compononents='mle'):
     pca = PCA(n_components=n_compononents)
     X = pd.DataFrame(pca.fit_transform(X))
-    print(pca.explained_variance_ratio_)
+    logging.info("PCA variance ratio")
+    logging.info(pca.explained_variance_ratio_)
     return X
 
 
@@ -182,28 +208,13 @@ if __name__ == '__main__':
         emb = int(file.split('emb')[1].split('.')[0])
         print(file)
         dataset[emb] = fm.get_data_from_file(file)
-
-    fig, axs = plt.subplots(len(dataset), 2, figsize=[15, 15])
-    i = 0
+        break
+    tiff = fm.get_tiff_file(emb)
     for ds in dataset.values():
-        ax = axs[i]
-
-        ds = tail_filter(ds)
-
-        X = normalize_and_center(ds)
-        X = principal_component_analysis(X)
-        print("start data classification")
-        labels = mean_shift_classification(X)
-        counts = labels.value_counts()
-        print("mean_shift : ")
-        print(counts)
-
-        ds = pd.concat([ds.reset_index(), labels], axis=1)
-        sct = sns.scatterplot(hue="mean_shift", x='solidity', y="mean_intensity", size="area", data=ds, ax=ax[0],
-                              legend=False)
-        sct2 = sns.scatterplot(hue="mean_shift", x='extent', y="mean_intensity", size="area", data=ds, ax=ax[1],
-                               legend=False)
-
-        i += 1
-    plt.tight_layout()
+        f_label= classify(ds)
+        viewer = MultiLayerViewer(tiff)
+        viewer.plot_imgs(features=f_label)
     plt.show()
+
+
+
