@@ -1,3 +1,5 @@
+For any information regarding this project, please contact antoine.meilliez@hec.edu
+
 # Molecule classification
 
 This project aims to detect automatically molecule and transcriptions site involved in the first step of developpement of drosophilia embryo.

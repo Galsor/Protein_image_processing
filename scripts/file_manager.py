@@ -74,6 +74,8 @@ def get_data_from_file(file_name="Features_cells_C10DsRedlessxYw_emb11_Center_Ou
     path = exist(file_name)
     try:
         df = pd.read_csv(path)
+        if len(df.columns)==1 :
+            df = pd.read_csv(path, delimiter = ";")
     except:
         raise ValueError(" '{}' couldn't be found in data directory".format(file_name))
     return df
