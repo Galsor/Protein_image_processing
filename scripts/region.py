@@ -105,7 +105,7 @@ OBJECT_COLUMNS = {
 }
 
 
-def region_properties(label_image, image=None, min_area=1, properties=None, separator='-'):
+def region_properties(label_image, image=None, min_area=1, max_area=0.002, properties=None, cells=None, separator='-'):
     """
     Convert image region properties  and list them into a column dictionary.
 
@@ -122,9 +122,12 @@ def region_properties(label_image, image=None, min_area=1, properties=None, sepa
     image : (N, M) ndarray, optional
         Intensity (i.e., input) image with same size as labeled image.
         Default is None.
-    min_area : int, optional
-        Minimum area size of regions
+    min_area : int or float optional
+        Minimum area size of regions. if < 1, a percentage of the image size will be used as min_area.
         Default is 1.
+    min_area : int or float optional
+        Maximum area size of regions. if < 1, a percentage of the image size will be used as max_area.
+        Default is 0.002 (i.e : 0.2% of image total size).
     properties : tuple or list of str, optional
         Properties that will be included in the resulting dictionary
         For a list of available properties, please see :func:`regionprops`.
@@ -147,6 +150,7 @@ def region_properties(label_image, image=None, min_area=1, properties=None, sepa
         DataFrame with rows as regions and columns as region properties`.
 
     """
+
     if image is None:
         regions = regionprops(label_image)
     else:
@@ -155,8 +159,12 @@ def region_properties(label_image, image=None, min_area=1, properties=None, sepa
         except Exception as err:
             raise err
 
+    passband = [min_area, max_area]
+    for i, thresh in enumerate(passband):
+        if thresh < 1:
+            passband[i] = label_image.shape[0]*label_image.shape[1]*thresh
     # Select only the regions up to the min area criteria
-    regions = [region for region in regions if region.area > min_area]
+    regions = [region for region in regions if region.bbox_area > passband[0] and region.bbox_area < passband[1]]
 
     if not properties:
         properties = PROPS.values()
@@ -192,6 +200,7 @@ def region_properties(label_image, image=None, min_area=1, properties=None, sepa
             logging.debug("Error with : " + prop)
             logging.debug(repr(err))
     r_properties = pd.DataFrame(r_properties)
+    r_properties = add_cells(r_properties, cells)
     return r_properties
 
 
@@ -294,9 +303,9 @@ def overlaped_regions(im1, df_region1, prev_im, prev_regions, filter=0.1):
         Value of threshold used to generate binary image to compare
         Default : 100
     :return: existing_regions_map : dict<(int, RegionProperties)>
-        The regions that overlap from im1 to im2 mapped with their Region3D_id
-    :return: new_regions_matched_ids: array<int>
-        List Ids of regions from the new image that matched with existing Region3D
+        Map of regions overlaping from im1 to im2 with their related Region3D_id
+    :return: regions_unmatched: pandas.DataFrame
+        Dataframe of regions that didn't match with existing Region3D
     """
     # format prev_regions to a dictionary dtype.
     if isinstance(prev_regions, dict):
@@ -359,7 +368,6 @@ def overlaped_regions(im1, df_region1, prev_im, prev_regions, filter=0.1):
             matching_fail += 1
 
     # create the list of the regions that have not match with an overlap centroid
-    #TODO : Test it works properly
     regions_unmatched = df_region1.drop(new_regions_matched_ids)
 
     logging.info("Amount of overlaped regions :" + str(len(centroids)))
@@ -367,3 +375,13 @@ def overlaped_regions(im1, df_region1, prev_im, prev_regions, filter=0.1):
     if len(centroids) > 0:
         logging.info("Matching fails ratio :" + str(round(matching_fail / len(centroids) * 100)) + "%")
     return existing_regions_map, regions_unmatched
+
+def add_cells(r_properties, label_cells):
+    """Check if the centroids of the detected regions are included in a cell. If yes, add the cell label to the region properties """
+    if label_cells is not None:
+        cells =[label_cells[r['centroid-0']][r['centroid-1']] for i, r in r_properties.iterrows()]
+        cells = pd.Series(cells, index=r_properties.index)
+        cells.name = "cell"
+        r_properties = pd.concat([r_properties,cells], axis=1)
+    return r_properties
+

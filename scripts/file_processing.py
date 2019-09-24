@@ -19,20 +19,14 @@ PROPERTIES = ['area',
               'centroid',
               'coords',
               'extent',
-              'label',
-              'local_centroid',
               'max_intensity',
               'mean_intensity',
               'min_intensity',
-              'perimeter',
               'intensity_image',
-              'solidity']
-#TODO :
-# Add inclusion in cell
-# add solidity
+              'convex_area']
 
 
-def extract_regions(tiff, channel=0, min_area=2, filter=0.10, mode='region'):
+def extract_regions(tiff, channel=0, min_area=2, filter=0.10, cells=None, mode='region'):
     """
     Extract regions3D from each layers of a tiff file.
 
@@ -47,8 +41,10 @@ def extract_regions(tiff, channel=0, min_area=2, filter=0.10, mode='region'):
         Increase the value of min_area to reject noise.
     :param filter: int, float, tuple<int>, str.
         Filter value. Refer to label_filter for further information
-    :param mode:
+    :param mode: str
         Type of region detection used. 2 modes are available : "region" and "blob".
+    :param cells: ndarray, optional
+        Image including labels of cells.
     :return: rf: RegionFrame
         RegionFrame object containing all regions 3D extracted in the image.
     """
@@ -72,12 +68,12 @@ def extract_regions(tiff, channel=0, min_area=2, filter=0.10, mode='region'):
         logging.info("_" * 80)
         if mode == 'region':
             df_properties = region_properties(label_filter(img, filter=filter)[0], img, properties=PROPERTIES,
-                                              min_area=min_area)
+                                              min_area=min_area, cells=cells)
         if mode == 'blob':
             #img = rscl_img[layer]
             layer_blobs = blobs[layer]
             df_properties = region_properties(label_filter_blobs(img, layer_blobs, filter=filter)[0], img, properties=PROPERTIES,
-                                              min_area=min_area)
+                                              min_area=min_area, cells=cells)
         # Previously test if 'regions' existing. Region has been replaced by df_properties
         if init:
             rf = RegionFrame(df_properties)
@@ -85,17 +81,18 @@ def extract_regions(tiff, channel=0, min_area=2, filter=0.10, mode='region'):
             prev_img = img
         elif not init:
             region_dict = rf.get_regions_in_last_layer()
-            matched_regions, new_regions_matched_ids = overlaped_regions(img, df_properties, prev_img, region_dict,
+            matched_regions, new_regions = overlaped_regions(img, df_properties, prev_img, region_dict,
                                                                          filter=filter)
             existing_regions_map = rf.enrich_region3D(matched_regions)
-            new_regions = [region for idx, region in df_properties.iterrows() if idx not in new_regions_matched_ids]
-            new_regions_map = rf.populate_region3D(new_regions)
+            if not new_regions.empty:
+                new_regions_map = rf.populate_region3D(new_regions)
+            else:
+                new_regions_map = []
             rf.update_map(existing_regions_map, new_regions_map)
             prev_img = img
 
     logging.info("Total amount of regions detected {}".format(rf.get_amount_of_regions3D()))
     return rf
-
 
 def extract_cells(tiff):
     """Generate labeled image of each cells in the tiff file.
@@ -107,10 +104,17 @@ def extract_cells(tiff):
     :return: label_img: ndarray<int>
         single image labelazing each cells detected.
     """
+    #TODO : Remove the overlabelling cases (where several cells are labelled as one.
     ch3 = tiff[:,:,:,2]
     contours = find_cells_contours(ch3)
     label_img, bin = label_filter_contours(contours, ch3[0].shape)
     return label_img
+
+def extract_region_with_cells(tiff, channel=0, min_area=2, filter=0.10, mode='region'):
+    label_cells = extract_cells(tiff)
+    rf = extract_regions(tiff, cells=label_cells, channel=channel, min_area=min_area, filter=filter, mode=mode)
+    return rf
+
 
 
 def test_pipeline():
@@ -132,7 +136,10 @@ def test_pipeline():
         raise e
 
 if __name__ == '__main__':
-    tiff = fm.get_tiff_file(1)
-    rf = extract_regions(tiff, channel=0)
-    df = rf.extract_features()
-    fm.save_results(df)
+    logging.basicConfig(level=logging.DEBUG)
+    embs = fm.get_embryos()
+    for emb in embs :
+        tiff = fm.get_tiff_file(emb)
+        rf = extract_region_with_cells(tiff,filter = 100)
+        df = rf.extract_features()
+        fm.save_results(df, file_name="features_extraction_emb{}_".format(emb), timestamped=True)

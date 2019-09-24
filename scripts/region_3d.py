@@ -16,13 +16,16 @@ class RegionFrame:
         Dictionnary containing all Region3D extracted in a tiff file. Keys refers to the id of the Region3D and Values refer to the Region3D object
     map: dict
         Dictionnary containing all the Region3D ids sorted by layer index. Keys refers to the layer index and Values refer to a list of Region3D ids. This attribute facilitate the recovery of the regions included in a given layer of the file.
-
+    cells: ndarray
+        Labelled image identifying the cells of the embryos
     """
 
-    def __init__(self, df_regions):
+    def __init__(self, df_regions, cells = None):
         region_id = 1
         regions_ids = []
         self.regions = {}
+        if cells is not None:
+            self.cells = cells
         for index, region in df_regions.iterrows():
             region3D = Region3D(region, region_id, 0)
             regions_ids.append(region_id)
@@ -117,6 +120,9 @@ class RegionFrame:
         """
         return self.get_regions_in_layer(self.get_last_layer_id())
 
+    def are_in_cell(self, df_region):
+        pass
+
     def enrich_region3D(self, couples):
         """ Add new regions to the related Region3D.
 
@@ -145,11 +151,11 @@ class RegionFrame:
         """
         partial_map = []
         new_layer_id = self.get_last_layer_id() + 1
-        for region in new_regions:
-            region_id = self.get_last_id() + 1
-            partial_map.append(region_id)
-            region3D = Region3D(region, region_id, new_layer_id)
-            self.regions[region_id] = region3D
+        for id_region, region in new_regions.iterrows():
+            region3D_id = self.get_last_id() + 1
+            partial_map.append(region3D_id)
+            region3D = Region3D(region, region3D_id, new_layer_id)
+            self.regions[region3D_id] = region3D
         logging.info("regions created in layer {0} : {1}".format(new_layer_id, len(new_regions)))
         return partial_map
 
@@ -181,6 +187,7 @@ class RegionFrame:
         for r in self.regions.values():
             features = r.extract_features()
             df = df.append(features, ignore_index=True)
+        df.set_index('id')
         return df
 
 
@@ -195,10 +202,11 @@ class Region3D:
         Id of the Region3D
     layers: pandas.DataFrame
         DataFrame where rows are the layer id and columns are region feature
-
+    cell: int
+        Label id of the cell in which the region is included. 0 if the region is out of cells boundaries
     """
 
-    def __init__(self, region, id, layer_id):
+    def __init__(self, region, id, layer_id, cell=0):
         self.id = id
         data = {key: [value] for key, value in region.items()}
         self.layers = pd.DataFrame(data, index=[layer_id])
@@ -230,6 +238,17 @@ class Region3D:
             Region3D id
         """
         return self.id
+
+    def get_cell(self):
+        cells = []
+        for i, r in self.layers.iterrows():
+            cells.append(r['cell'])
+        unique = np.unique(np.array(cells))
+        cell = unique[0]
+        if len(unique) > 1:
+            logging.debug("More than one cell contains the region {}".format(self.id))
+        return cell
+
 
     # Features extraction for classification
     def get_depth(self):
@@ -282,8 +301,8 @@ class Region3D:
 
     def get_centroid_3D(self):
         centroids = self.get_local_centroids()
-        x = int(np.sum([c[0] for c in centroids]) / float(len(centroids)))
-        y = int(np.sum([c[1] for c in centroids]) / float(len(centroids)))
+        y = int(np.sum([c[0] for c in centroids]) / float(len(centroids)))
+        x = int(np.sum([c[1] for c in centroids]) / float(len(centroids)))
         z = np.mean(self.layers.index.values).astype(int)
         return x, y, z
 
@@ -302,6 +321,18 @@ class Region3D:
         extent = self.get_area() / np.prod([rows, cols, height])
         return extent
 
+    def get_convex_area(self):
+        """Sum of the area surrounded by the smallest hull polygon of each layer"""
+        c_area = 0
+        for i, r in self.layers.iterrows():
+            c_area += r['convex_area']
+        return c_area
+
+    def get_solidity(self):
+        """Ratio of pixels in the region to pixels in the convex hull polygon. Computed as area / convex_area"""
+
+        return self.get_area() / self.get_convex_area()
+
     def extract_features(self):
         """ Return the computed features of the Region3D. These features includes:
             - "id": id of the Region3D,
@@ -315,6 +346,8 @@ class Region3D:
             - "centroid_y": y coordinate of the Region3D centroid,
             - "centroid_z": z coordinate of the Region3D centroid,
             - "extent": Ratio of pixels in the region to pixels in the total bounding box.
+            - "solidity": Ratio of the region area with the area of the smallest hull polygon that that surround the region
+            - "in_cell": True is the region is included in a cell
         :return: dict
             Dictionnary including Region3D's features.
         """
@@ -329,6 +362,8 @@ class Region3D:
         min_intensity = self.get_min_intensity()
         x, y, z = self.get_centroid_3D()
         extent = self.get_extent()
+        solidity = self.get_solidity()
+        in_cell = self.get_cell()
 
         features = {"id": ids,
                     "depth": depth,
@@ -340,6 +375,8 @@ class Region3D:
                     "centroid_x": x,
                     "centroid_y": y,
                     "centroid_z": z,
-                    "extent": extent
+                    "extent": extent,
+                    "solidity": solidity,
+                    "cell": in_cell
                     }
         return features
