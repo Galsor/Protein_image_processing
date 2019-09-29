@@ -66,7 +66,7 @@ def gaussian_mix_classification(features, n_clusters=2):
     return labels
 
 
-def plot_result_classif(regions, properties, labels, image):
+def plot_results_classif(regions, properties, labels, image):
     # TODO intégrer cette visulisation dans la Demo Region
     fig, axs = plt.subplots(ncols=2, figsize=(10, 6))
     # axs[0].imshow(image, cmap='gray')
@@ -90,6 +90,31 @@ def plot_result_classif(regions, properties, labels, image):
                     ax=axs[1])
     axs[0].set_axis_off()
     plt.tight_layout()
+
+
+def save_results_classif(features, labels, file_name = "Result_classif", timestamped=True):
+    if len(labels) == len(features):
+        if isinstance(labels, pd.Series):
+            labels.name = "label"
+            ts_label = labels["label"].value_counts().idxmax()
+
+            res = pd.concat([features, labels], axis=1)
+            res.loc[res["label"] == ts_label, "label"] = "TS"
+            res.loc[res["label"] != "TS", "label"] = "single_mol"
+        else:
+            logging.error("Unknown format of features and labels.")
+    elif len(labels) < len(features):
+        if isinstance(labels,pd.DataFrame):
+            try :
+                ts_label = labels["label"].value_counts().idxmax()
+                res = pd.concat([features.set_index("id"), labels.set_index("id")["label"]], axis=1)
+                res.loc[res["label"] == ts_label, "label"] = "TS"
+                res.loc[res["label"] != "TS", "label"] = "single_mol"
+            except Exception as e:
+                logging.error(repr(e))
+        else:
+            logging.error("Unknown format of features and labels.")
+    fm.save_results(res, file_name=file_name, timestamped=timestamped)
 
 
 def normalize_and_center(X):
