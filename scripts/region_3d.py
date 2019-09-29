@@ -184,9 +184,15 @@ class RegionFrame:
         Note: For further information on features types, please refer to Region3D.extract_features
         """
         df = pd.DataFrame()
+        total = len(self.regions.values())
+        i = 0
         for r in self.regions.values():
+            prog = (i/total*100).round()
+            if prog % 10==0:
+                logging.info("progression {}%, {}/{} regions".format(prog, i, total))
             features = r.extract_features()
             df = df.append(features, ignore_index=True)
+            i+=1
         df.set_index('id')
         return df
 
