@@ -7,6 +7,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from math import sqrt
 from scipy.signal import find_peaks
+import pandas as pd
 
 from skimage.filters import threshold_otsu, threshold_niblack, threshold_sauvola
 from skimage.morphology import closing, square, watershed
@@ -312,21 +313,25 @@ def rscl_intensity(img, low_perc=1, high_perc=99):
 #               IMAGE LABELLING
 # ________________________________________________
 
-def define_filter_value(image, filter, window_size=5, k=0.2):
+def define_filter_value(image, filter="auto", window_size=5, k=0.2):
     """ Function used to define a Threshold value that can be used for high-pass filtering
 
     :param image: array
         Single image in gray-scale
     :param filter: number or str
-        This parameter can be an absolute or a relative value of intensity. i.e 150 will lead to a threshold of 150 and 0.15 will lead to put the threshold up to 15% of the intensity values. String can also be passed as input to use some specific filtering method.
+        This parameter can be an absolute or a relative value of intensity.
+        i.e 150 will lead to a threshold of 150 and 0.15 will lead to put the threshold up to 15% of the intensity values.
+        String can also be passed as input to use some specific filtering method.
+        "Auto" can be use to automatically detect the background threshold based on intensity distribution.
+        Default "auto"
     :param window_size: int, or iterable of int, optional
-    Window size specified as a single odd integer (3, 5, 7, …), or an iterable of length image.ndim containing only odd integers (e.g. (1, 5, 5)).
-    Parameter used only for niblack and sauvola thresholding.
-    Default 5.
+        Window size specified as a single odd integer (3, 5, 7, …), or an iterable of length image.ndim containing only odd integers (e.g. (1, 5, 5)).
+        Parameter used only for niblack and sauvola thresholding.
+        Default 5.
     :param k: float
-    Value of parameter k in threshold formula.
-    Parameter used only for niblack and sauvola thresholding.
-    Default 0.2.
+        Value of parameter k in threshold formula.
+        Parameter used only for niblack and sauvola thresholding.
+        Default 0.2.
 
     :return: thresh : number
         Upper threshold value. All pixels with an intensity higher than this value are assumed to be foreground
@@ -340,22 +345,37 @@ def define_filter_value(image, filter, window_size=5, k=0.2):
         thresh = 100
     elif isinstance(filter, int):
         thresh = filter
-    elif filter < 1 and filter > 0:
-        max = np.amax(image)
-        min = np.amin(image)
-        intensity_band = max - min
-        thresh = intensity_band * filter
+    elif isinstance(filter, float):
+        thresh = filter.round()
     elif filter == "otsu":
         thresh = threshold_otsu(image)
     elif filter == "niblack":
         thresh = threshold_niblack(image, window_size=window_size, k=k)
     elif filter == "sauvola":
         thresh = threshold_sauvola(image, window_size=window_size)
-
+    elif filter == "mean":
+        thresh = np.mean(image)
+    elif filter == "median":
+        thresh = np.median(image)
+    elif filter == "auto":
+        # Remove the values of intensity which are above the mean distribution of intensity values (i.e. background).
+        v = image.flatten()
+        unique, counts = np.unique(v, return_counts=True)
+        df = pd.DataFrame(np.asarray([unique, counts]).T, columns=["value", "counts"])
+        df["mean_diff"] = df["counts"] - df["counts"].mean()
+        df = df.rolling(10).mean()  # smooth distribution peaks
+        thresh = df.loc[df["mean_diff"] < 0].to_numpy()[0][0]
+    elif filter < 1 and filter > 0:
+        max = np.amax(image)
+        min = np.amin(image)
+        intensity_band = max - min
+        thresh = intensity_band * filter
+    else:
+        raise ValueError("Wrong type value for filter argument")
     return thresh
 
-
-def label_filter(image, filter=None, window_size=5, k=0.2, close_square=2):
+# TODO : refactor label filtering to take tiff file as input and to return array of labeled image
+def label_filter(image, filter="auto", window_size=5, k=0.2, close_square=2):
     """ Apply intensity filter and returns the binary resulting from filtering and a labeled image. Labeled image can be use for region extraction.
 
     :param image: (N, M) ndarray
@@ -366,8 +386,9 @@ def label_filter(image, filter=None, window_size=5, k=0.2, close_square=2):
             - "otsu"
             - "niblack"
             - "sauvola"
+            - "auto"
 
-        Default : 100
+        Default : auto
     :param window_size : int, or iterable of int, optional
         Window size specified as a single odd integer (3, 5, 7, …),
         or an iterable of length ``image.ndim`` containing only odd
@@ -393,8 +414,8 @@ def label_filter(image, filter=None, window_size=5, k=0.2, close_square=2):
         thresh_min = define_filter_value(image, filter, window_size, k)
         thresh_max = None
 
-    logging.info("Threshold : ")
-    logging.info(thresh_min)
+    logging.debug("Threshold value applied to the image : {}".format(thresh_min))
+
 
     # apply filter
     if thresh_max is None:
@@ -412,14 +433,14 @@ def label_filter(image, filter=None, window_size=5, k=0.2, close_square=2):
 
 
 def demo_label_filter(image):
-    fig, axs = plt.subplots(nrows=2, ncols=3, sharex=True, sharey=True)
+    fig, axs = plt.subplots(nrows=2, ncols=4, sharex=True, sharey=True)
     axs[0][0].imshow(image)
     axs[0][0].set_title("Original")
-    filters = [None, 250, 0.2, "otsu", "niblack", "sauvola"]
+    filters = [None, 100, 0.2, "otsu", "niblack", "sauvola", "mean", "auto"]
     for i in range(len(filters)):
         label_image, image_label_overlay = label_filter(image, filter=filters[i])
-        row = int((i + 1) / 3)
-        col = (i + 1) % 3
+        row = int(i / 4)
+        col = int(i % 4)
         axs[row][col].imshow(image_label_overlay, cmap="gray")
         axs[row][col].set_axis_off()
         axs[row][col].set_title(filters[i])
@@ -428,7 +449,7 @@ def demo_label_filter(image):
     plt.show()
 
 
-def label_filter_blobs(img, blobs, filter=None, window_size=5, k=0.2):
+def label_filter_blobs(img, blobs, filter="auto", window_size=5, k=0.2):
     """ Apply intensity filter on the image and remove all parts of the image which are not included in blobs contours.
     The method returns the binary resulting from the blob filtering and a labeled image. Labeled image can be use for region extraction.
 
@@ -443,7 +464,8 @@ def label_filter_blobs(img, blobs, filter=None, window_size=5, k=0.2):
             - "otsu"
             - "niblack"
             - "sauvola"
-       Default : 100
+            - "auto"
+       Default : "auto"
     :param window_size : int, or iterable of int, optional
         Window size specified as a single odd integer (3, 5, 7, …),
         or an iterable of length ``image.ndim`` containing only odd
