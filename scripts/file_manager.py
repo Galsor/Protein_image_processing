@@ -29,13 +29,20 @@ def get_embryos():
 def get_tiff_file(embryo):
     """ Open a tiff file from the id of the embryo.
 
-    :param embryo: int
-        Key or id used to identify the embryo in the file name. Template use for file naming must be : C10DsRedlessxYw_emb{embryo id}_Center_Out.tif
+    :param embryo: int or str
+        if int: Key or id used to identify the embryo in the file name. Template use for file naming must be : C10DsRedlessxYw_emb{embryo id}_Center_Out.tif
+        if str: Full path of the file.
     :return: tiff: ndarray
         4 dimensional array including all images and all channels
     """
-    file_path = DATA_PATH + "\\embryos\\" + FILE_NAME_TEMPLATE.format(embryo)
-    tiff = io.imread(file_path)
+    if isinstance(embryo, int):
+        embryo = DATA_PATH + "\\embryos\\" + FILE_NAME_TEMPLATE.format(embryo)
+    elif os.path.isfile(embryo):
+        pass
+    else:
+        raise ValueError("Wrong type of input used to open tiff file. Please use the complete path as a str of the file id as an int")
+    tiff = io.imread(embryo)
+
     return tiff
 
 
