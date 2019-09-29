@@ -288,7 +288,8 @@ def demo_regions(image, label_image, show_image=None, min_area=4, title="Demo of
 #               OVERLAPED REGION FINDER
 # ________________________________________________
 
-def overlaped_regions(im1, df_region1, prev_im, prev_regions, filter=0.1):
+
+def overlapped_regions(im1, df_region1, prev_im, prev_regions, filter=0.1):
     """
     Identify overlaped regions between two images. Return a list of tuple containing (region from img 1, region from img 2)
     :param im1: (N, M) ndarray
@@ -318,14 +319,18 @@ def overlaped_regions(im1, df_region1, prev_im, prev_regions, filter=0.1):
         raise TypeError("Wrong type of values for regions2")
 
     # Compute difference between the two images
+    logging.info("Compute binary of the new image")
     bin1 = label_filter(im1, filter)[1]
+    logging.info("Compute binary of the previous image")
     bin2 = label_filter(prev_im, filter)[1]
+    logging.info("Compute the images overlap")
     overlap_bin = np.logical_and(bin1, bin2)
 
     # label the region where an overlap appears
     label_overlap_image = label(overlap_bin)
 
     # extract the properties of the overlapped regions
+    logging.info("Extract regions from the overlap image")
     df_overlap_prop = region_properties(label_overlap_image, properties=['centroid'])
     # collect the centroids of the overlapped regions
     centroids = [(region['centroid-0'], region['centroid-1']) for i, region in df_overlap_prop.iterrows()]
@@ -356,8 +361,8 @@ def overlaped_regions(im1, df_region1, prev_im, prev_regions, filter=0.1):
 
     existing_regions_map = {}
     new_regions_matched_ids = []
-    logging.info("start mapping")
     matching_fail = 0
+    logging.info("Match new regions with existing regions centroid")
     for centroid in centroids:
         try:
             #Try to find a new region that includes the centroid of the overlap region
@@ -375,6 +380,7 @@ def overlaped_regions(im1, df_region1, prev_im, prev_regions, filter=0.1):
     if len(centroids) > 0:
         logging.info("Matching fails ratio :" + str(round(matching_fail / len(centroids) * 100)) + "%")
     return existing_regions_map, regions_unmatched
+
 
 def add_cells(r_properties, label_cells):
     """Check if the centroids of the detected regions are included in a cell. If yes, add the cell label to the region properties """
